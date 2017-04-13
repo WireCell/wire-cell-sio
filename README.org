@@ -1,0 +1,4 @@
+* Simple I/O for Wire Cell Toolkit
+
+This package provides some WCT source and sink components to provide
+some simple input/ouput file support.  This package depends on ROOT.
