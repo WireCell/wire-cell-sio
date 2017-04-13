@@ -8,6 +8,9 @@
 #include <iostream>
 #include <unordered_map>
 
+WIRECELL_FACTORY(HistFrameSink, WireCell::Sio::HistFrameSink, WireCell::IFrameSink, WireCell::IConfigurable);
+
+
 using namespace std;
 using namespace WireCell;
 
