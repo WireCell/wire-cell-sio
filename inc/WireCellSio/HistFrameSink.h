@@ -33,6 +33,7 @@ namespace WireCell {
             
             std::string m_filepat, m_anode_tn;
             IAnodePlane::pointer m_anode;
+            double m_units; 
 
         };
 

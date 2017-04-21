@@ -19,6 +19,7 @@ using namespace WireCell;
 Sio::HistFrameSink::HistFrameSink()
     : m_filepat("histframe-%02d.root")
     , m_anode_tn("AnodePlane")
+    , m_units(1.0)
 {
 }
 
@@ -32,13 +33,14 @@ WireCell::Configuration Sio::HistFrameSink::default_configuration() const
     Configuration cfg;
     cfg["filename"] = m_filepat;
     cfg["anode"] = m_anode_tn;
+    cfg["units"] = units::mV;
     return cfg;
 }
 
 void Sio::HistFrameSink::configure(const WireCell::Configuration& cfg)
 {
     m_filepat = get<std::string>(cfg, "filename", m_filepat);
-
+    m_units = get<double>(cfg, "units", m_units);
     m_anode_tn = get<std::string>(cfg, "anode", m_anode_tn);
     m_anode = Factory::lookup_tn<IAnodePlane>(m_anode_tn);
     if (!m_anode) {
@@ -86,10 +88,6 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         auto& tbins = get<2>(tct);
         auto tbmm = std::minmax_element(tbins.begin(), tbins.end());
 
-        cerr << wpident
-             << " chan:[" << *chmm.first << "," << *chmm.second << "] "
-             << " tbin:[" << *tbmm.first << "," << *tbmm.second <<"]\n";
-
 
         const double tmin = t0 + tick*(*tbmm.first);
         const double tmax = t0 + tick*(*tbmm.second);
@@ -112,9 +110,19 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
             int nbins = charge.size();
             for (int ibin=0; ibin<nbins; ++ibin) {
                 const double t = t0 + (tick)*(tbin+ibin+0.5); // 0.5 to land in bin-center
-                hist->Fill(t/units::us, fch, charge[ibin]);
+                hist->Fill(t/units::us, fch, charge[ibin]/m_units);
             }
         }
+
+        cerr << wpident
+             << " qunit:" << m_units
+             << " integ:" << hist->Integral()
+             << " min:" << hist->GetMinimum()
+             << " max:" << hist->GetMaximum()
+             << " chan:[" << chmin << "," << chmax << "] "
+             << " time:[" << tmin/units::us << "," << tmax/units::us <<"]us\n";
+
+
         hist->Write();
     }
     file->Close();
