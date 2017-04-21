@@ -115,7 +115,7 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         }
 
         cerr << wpident
-             << " qunit:" << m_units
+             << " qunit:" << m_units/units::volt << " volts"
              << " integ:" << hist->Integral()
              << " min:" << hist->GetMinimum()
              << " max:" << hist->GetMaximum()
