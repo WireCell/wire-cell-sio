@@ -134,4 +134,5 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
     file->Close();
     delete file;
     file = nullptr;
+    return true;
 }
