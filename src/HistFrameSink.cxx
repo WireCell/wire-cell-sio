@@ -47,6 +47,10 @@ void Sio::HistFrameSink::configure(const WireCell::Configuration& cfg)
         cerr << "Sio::HistFrameSink: failed to get anode: \"" << m_anode_tn << "\"\n";
         return;
     }
+    cerr << "Sio::HistFrameSink: configured with: "
+         << "file:" << m_filepat << ", "
+         << "units:" << m_units << ", "
+         << "anode:" << m_anode_tn << endl;
 }
 
 
