@@ -45,6 +45,7 @@ WireCell::Configuration Sio::JsonDepoSource::default_configuration() const
     Configuration cfg;
     cfg["filename"] = "";       // json file name
     cfg["jsonpath"] = "depos";  // path to depo list in json data
+    cfg["qunit"] = 1.0;         // multiply this to each "q" value
     return cfg;
 }
 
@@ -54,6 +55,7 @@ void Sio::JsonDepoSource::configure(const WireCell::Configuration& cfg)
 
     string filename = get<string>(cfg,"filename");
     string dotpath = get<string>(cfg,"jsonpath","depos");
+    const double qunit = get<double>(cfg, "qunit", 1.0);
 
     if (filename.empty()) {
         cerr << "JsonDepoSource::configure: no JSON filename given" << endl;
@@ -68,7 +70,7 @@ void Sio::JsonDepoSource::configure(const WireCell::Configuration& cfg)
             Point(get(jdepo, "x", 0.0),
                   get(jdepo, "y", 0.0),
                   get(jdepo, "z", 0.0)),
-            get(jdepo,"q",1000.0));
+            qunit*get(jdepo,"q",1000.0));
         m_depos.push_back(depo);
     }
     std::sort(m_depos.begin(), m_depos.end(), descending_time);

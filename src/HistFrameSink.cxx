@@ -102,6 +102,8 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
                               ntbins, tmin/units::us, tmax/units::us,
                               nchbins, chmin, chmax);
         hist->SetDirectory(file); // needed?
+        hist->SetXTitle("time [us]");
+        hist->SetYTitle("channel");
 
         for (auto& trace : traces) {
             double fch = trace->channel() + 0.5; // make sure we land in bin-center.
@@ -115,7 +117,7 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         }
 
         cerr << wpident
-             << " qunit:" << m_units/units::volt << " volts"
+             << " qunit:" << m_units << " "
              << " integ:" << hist->Integral()
              << " min:" << hist->GetMinimum()
              << " max:" << hist->GetMaximum()
