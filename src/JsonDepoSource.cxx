@@ -29,10 +29,12 @@ public:
     virtual double operator()(Json::Value depo) const = 0;
 };
 class ElectronsAdapter : public Sio::JsonRecombinationAdaptor {
+    double m_scale;
 public:
+    ElectronsAdapter(double scale=1.0) : m_scale(scale) {}
     virtual ~ElectronsAdapter() {};
     virtual double operator()(Json::Value depo) const {
-        return depo["n"].asDouble()*(-1.0*units::eplus);
+        return m_scale*depo["n"].asInt()*(-1.0*units::eplus);
     }
 };
 class PointAdapter : public Sio::JsonRecombinationAdaptor {
@@ -124,7 +126,9 @@ void Sio::JsonDepoSource::configure(const WireCell::Configuration& cfg)
     std::string model_type = String::split(model_tn)[0];
 
     if (model_type == "electrons") { // "n" already gives number of ionization electrons
-        m_adapter = new ElectronsAdapter;
+        double scale = get(cfg,"scale",1.0);
+        cerr << "Sio::JsonDepoSource: using electrons with scale=" << scale << endl;
+        m_adapter = new ElectronsAdapter(scale);
     }
     else {
         auto model = Factory::lookup_tn<IRecombinationModel>(model_tn);
@@ -132,7 +136,7 @@ void Sio::JsonDepoSource::configure(const WireCell::Configuration& cfg)
             cerr << "Sio::JsonDepoSource::configure: unknown recombination model: \"" << model_tn << "\"\n";
             return;
         }
-        if (model_type == "LinearRecombination") {
+        if (model_type == "MipRecombination") {
             m_adapter = new PointAdapter(model);
         }
         if (model_type == "BirksRecombination" || model_type == "BoxRecombination") {
