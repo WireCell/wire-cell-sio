@@ -97,9 +97,9 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         const double tmax = t0 + tick*(*tbmm.second);
         const int ntbins = (*tbmm.second)-(*tbmm.first);
 
-        const float chmin = *chmm.first;
-        const float chmax = *chmm.second + 1;
-        const int nchbins = (*chmm.second) - (*chmm.first) + 1;
+        const int chmin = round(*chmm.first);
+        const int chmax = round(*chmm.second + 1);
+        const int nchbins = chmax - chmin;
         
         TH2F* hist = new TH2F(Form("plane%d", wpident),
                               Form("Plane %d", wpident),

@@ -43,7 +43,7 @@ public:
     PointAdapter(IRecombinationModel::pointer model) : m_model(model) {}
     virtual ~PointAdapter() {}
     virtual double operator()(Json::Value depo) const {
-        const double dE = depo["q"].asDouble()*units::MeV;
+        const double dE = depo["q"].asDouble();
         return (*m_model)(dE);
     }
 };
@@ -53,8 +53,8 @@ public:
     StepAdapter(IRecombinationModel::pointer model) : m_model(model) {}
     virtual ~StepAdapter() {}
     virtual double operator()(Json::Value depo) const {
-        const double dE = depo["q"].asDouble()*units::MeV;
-        const double dX = depo["s"].asDouble()*units::cm;
+        const double dE = depo["q"].asDouble();
+        const double dX = depo["s"].asDouble();
         return (*m_model)(dE, dX);
     }
 };
@@ -105,10 +105,10 @@ IDepo::pointer Sio::JsonDepoSource::jdepo2idepo(Json::Value jdepo)
 {
     const double q = (*m_adapter)(jdepo);
     auto idepo = std::make_shared<SimpleDepo>(
-        get(jdepo,"t",0.0*units::ns),
-        Point(get(jdepo, "x", 0.0)*units::cm,
-              get(jdepo, "y", 0.0)*units::cm,
-              get(jdepo, "z", 0.0)*units::cm),
+        get(jdepo,"t",0.0),
+        Point(get(jdepo, "x", 0.0),
+              get(jdepo, "y", 0.0),
+              get(jdepo, "z", 0.0)),
         q);
     return idepo;
 }
