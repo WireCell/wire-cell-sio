@@ -1,7 +1,7 @@
-/** A "Xin" file is one used in the WC prototype and some large tests in the toolkit. */
+/** A "Magnify" file is one used for viewing in the Magnify display. */
 
-#ifndef WIRECELLSIO_XINFILESOURCE
-#define WIRECELLSIO_XINFILESOURCE
+#ifndef WIRECELLSIO_MAGNIFYFILESOURCE
+#define WIRECELLSIO_MAGNIFYFILESOURCE
 
 #include "WireCellIface/IFrameSource.h"
 #include "WireCellIface/IConfigurable.h"
@@ -9,11 +9,11 @@
 namespace WireCell {
     namespace Sio {
 
-        class XinFileSource : public IFrameSource, public IConfigurable {
+        class MagnifySource : public IFrameSource, public IConfigurable {
         public:
 
-            XinFileSource();
-            virtual ~XinFileSource();
+            MagnifySource();
+            virtual ~MagnifySource();
 
             /// IFrameSource
             virtual bool operator()(IFrame::pointer& out);

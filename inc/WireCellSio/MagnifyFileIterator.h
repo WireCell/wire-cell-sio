@@ -1,7 +1,7 @@
-/** This only works for MB. It's used by tests and XinFileSource. */
+/** This only works for MB. It's used by tests and MagnifySource. */
 
-#ifndef WIRECELLSIO_XINFILEITERATOR
-#define WIRECELLSIO_XINFILEITERATOR
+#ifndef WIRECELLSIO_MAGNIFYFILEITERATOR
+#define WIRECELLSIO_MAGNIFYFILEITERATOR
 
 #include "WireCellUtil/Waveform.h"
 #include "WireCellIface/IFrame.h"
@@ -15,12 +15,12 @@ namespace WireCell {
     namespace Sio {
 
 
-        class XinFileIterator {
+        class MagnifyFileIterator {
             TH2* hist[3];		// per plane
             WireCell::Waveform::ChannelMaskMap ret;
             TFile *file;
         public:
-            XinFileIterator(const char* filename, const char* histtype="raw");
+            MagnifyFileIterator(const char* filename, const char* histtype="raw");
 
             int plane(int ch);
 

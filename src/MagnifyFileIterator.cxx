@@ -1,4 +1,4 @@
-#include "WireCellSio/XinFileIterator.h"
+#include "WireCellSio/MagnifyFileIterator.h"
 #include "WireCellIface/SimpleTrace.h"
 #include "WireCellIface/SimpleFrame.h"
 
@@ -9,7 +9,7 @@
 using namespace WireCell;
 using namespace std;
 
-Sio::XinFileIterator::XinFileIterator(const char* filename, const char* histtype)
+Sio::MagnifyFileIterator::MagnifyFileIterator(const char* filename, const char* histtype)
 {
     file = TFile::Open(filename);
     string uvw = "uvw";
@@ -53,20 +53,20 @@ Sio::XinFileIterator::XinFileIterator(const char* filename, const char* histtype
     //delete file;
 }
 
-int Sio::XinFileIterator::plane(int ch)
+int Sio::MagnifyFileIterator::plane(int ch)
 {
     if (ch < 2400) return 0;
     if (ch < 2400+2400) return 1;
     return 2;
 }
-int Sio::XinFileIterator::index(int ch)
+int Sio::MagnifyFileIterator::index(int ch)
 {
     if (ch < 2400) return ch;
     if (ch < 2400+2400) return ch-2400;
     return ch-2400-2400;
 }
 
-vector<float> Sio::XinFileIterator::at(int ch) 
+vector<float> Sio::MagnifyFileIterator::at(int ch) 
 {
     TH2* h = hist[plane(ch)];
     int ind = index(ch);
@@ -77,7 +77,7 @@ vector<float> Sio::XinFileIterator::at(int ch)
     return ret;
 }
 
-void Sio::XinFileIterator::clear()
+void Sio::MagnifyFileIterator::clear()
 {
     delete hist[0];
     delete hist[1];
@@ -88,7 +88,7 @@ void Sio::XinFileIterator::clear()
 }
   
 /// Return a frame, the one and only in the file.
-IFrame::pointer Sio::XinFileIterator::frame()
+IFrame::pointer Sio::MagnifyFileIterator::frame()
 {
     ITrace::vector traces;
 
