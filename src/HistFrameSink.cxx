@@ -68,7 +68,8 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
     ITrace::shared_vector traces = frame->traces();
     for (ITrace::pointer trace : *traces) {
         int ch = trace->channel();
-        auto wpident = m_anode->resolve(ch).ident(); 
+        auto wpid = m_anode->resolve(ch);
+        int wpident = wpid.ident(); 
         double tmin = trace->tbin();
         double tlen = trace->charge().size();
 
@@ -77,11 +78,14 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         get<1>(tct).push_back(ch);
         get<2>(tct).push_back(tmin);
         get<2>(tct).push_back(tmin+tlen);
+
+        if (wpident < 0) {
+            cerr << "Channel "<<ch<<" has illegal wire plane ident: " << wpid << endl;
+        }
     }
 
     const double t0 = frame->time();
     const double tick = frame->tick();
-
 
     for (auto& thisplane : perplane) {
         int wpident = thisplane.first;
@@ -109,24 +113,31 @@ bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
         hist->SetXTitle("time [us]");
         hist->SetYTitle("channel");
 
+        double qtot = 0;
+        int nbins_tot = 0;
         for (auto& trace : traces) {
             double fch = trace->channel() + 0.5; // make sure we land in bin-center.
             int tbin = trace->tbin();
             auto& charge = trace->charge();
             int nbins = charge.size();
+            nbins_tot += nbins;
             for (int ibin=0; ibin<nbins; ++ibin) {
                 const double t = t0 + (tick)*(tbin+ibin+0.5); // 0.5 to land in bin-center
                 hist->Fill(t/units::us, fch, charge[ibin]/m_units);
+                qtot += charge[ibin];
             }
         }
 
         cerr << wpident
+             << " ntraces:" << traces.size() << " "
+             << " nsamples:" << nbins_tot << " "
+             << " qtot:" << qtot/m_units << " "
              << " qunit:" << m_units << " "
              << " integ:" << hist->Integral()
              << " min:" << hist->GetMinimum()
              << " max:" << hist->GetMaximum()
-             << " chan:[" << chmin << "," << chmax << "] "
-             << " time:[" << tmin/units::us << "," << tmax/units::us <<"]us\n";
+             << " chan:"<<nchbins<<"[" << chmin << "," << chmax << "] "
+             << " time:"<<ntbins<<"[" << tmin/units::us << "," << tmax/units::us <<"]us\n";
 
 
         hist->Write();
