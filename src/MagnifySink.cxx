@@ -1,4 +1,5 @@
 #include "WireCellSio/MagnifySink.h"
+#include "WireCellIface/ITrace.h"
 
 #include "TH1F.h"
 #include "TH2F.h"
@@ -8,9 +9,14 @@
 
 #include "WireCellUtil/NamedFactory.h"
 
+#include <vector>
+#include <string>
+
 WIRECELL_FACTORY(MagnifySink, WireCell::Sio::MagnifySink, WireCell::IFrameSink, WireCell::IConfigurable);
 
 using namespace WireCell;
+
+static std::vector<std::string> known_cateogries{"threshold","baseline","orig","raw","decon"};
 
 Sio::MagnifySink::MagnifySink()
 {
@@ -34,241 +40,208 @@ void Sio::MagnifySink::configure(const WireCell::Configuration& cfg)
         THROW(ValueError() << errmsg{"Must provide output filename to MagnifySink"});
     }
 
+    auto anode_tn = get<std::string>(cfg, "anode", "AnodePlane");
+    m_anode = Factory::find_tn<IAnodePlane>(anode_tn);
+
     m_cfg = cfg;
 }
 
 WireCell::Configuration Sio::MagnifySink::default_configuration() const
 {
     Configuration cfg;
-    cfg["input_filename"] = ""; // fixme: this TOTALLY violates the design of wire cell DFP
-    cfg["output_filename"] = "";
+
+    cfg["anode"] = "AnodePlane";
+
     cfg["rebin"] = 1;           // fixme: so does this.  Rebinning should be done in an IFrameFilter
+    cfg["input_filename"] = ""; // fixme: this TOTALLY violates the design of wire cell DFP
+    // More evilness: these are the histogram types that I know about and will shunt by default.
+    for (size_t ind=0; ind<known_cateogries.size(); ++ind) {
+        cfg["shunt"][(int)ind] = known_cateogries[ind];
+    }
+
+    cfg["output_filename"] = "";
+    cfg["histtype"] = "decon";
+
     return cfg;
 }
 
-
-
-void dirty_laundry(const IFrame::pointer& frame_decon,
-                   const char* input_filename,
-                   const char* output_filename,
-                   int nrebin);
 
 bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
 {
     std::string ifname = m_cfg["input_filename"].asString();
     std::string ofname = m_cfg["output_filename"].asString();
-    int nrebin = m_cfg["rebin"].asInt();
-    dirty_laundry(frame, ifname.c_str(), ofname.c_str(), nrebin);
-    return true;
-}
+    const int nrebin = m_cfg["rebin"].asInt();
+    std::string histtype = m_cfg["histtype"].asString();
 
-
-
-void dirty_laundry(const IFrame::pointer& frame_decon,
-                   const char* input_filename,
-                   const char* output_filename,
-                   int nrebin) 
-{
-    TFile *input_tf = TFile::Open(input_filename);
-    TFile* output_tf = TFile::Open(output_filename, "RECREATE");
-    TTree *Trun = ((TTree*)input_tf->Get("Trun"))->CloneTree();
-    Trun->SetDirectory(output_tf);
-
-    TH2I *hu_orig = (TH2I*)input_tf->Get("hu_orig");
-    TH2I *hv_orig = (TH2I*)input_tf->Get("hv_orig");
-    TH2I *hw_orig = (TH2I*)input_tf->Get("hw_orig");
-
-    hu_orig->SetDirectory(output_tf);
-    hv_orig->SetDirectory(output_tf);
-    hw_orig->SetDirectory(output_tf);
-  
-    int nwire_u = hu_orig->GetNbinsX();
-    int nwire_v = hv_orig->GetNbinsX();
-    int nwire_w = hw_orig->GetNbinsX();
-    int nticks = hu_orig->GetNbinsY();
-
-  
-    TH2F *hu_raw = (TH2F*)input_tf->Get("hu_raw");
-    TH2F *hv_raw = (TH2F*)input_tf->Get("hv_raw");
-    TH2F *hw_raw = (TH2F*)input_tf->Get("hw_raw");
-
-    hu_raw->SetDirectory(output_tf);
-    hv_raw->SetDirectory(output_tf);
-    hw_raw->SetDirectory(output_tf);
-
-  
-    TH1F *hu_baseline = (TH1F*)input_tf->Get("hu_baseline");
-    TH1F *hv_baseline = (TH1F*)input_tf->Get("hv_baseline");
-    TH1F *hw_baseline = (TH1F*)input_tf->Get("hw_baseline");
-  
-    hu_baseline->SetDirectory(output_tf);
-    hv_baseline->SetDirectory(output_tf);
-    hw_baseline->SetDirectory(output_tf);
-
-  
-    // temporary ...  need a data structure to load the threshold ... 
-    TH1F *hu_threshold = (TH1F*)input_tf->Get("hu_threshold");
-    TH1F *hv_threshold = (TH1F*)input_tf->Get("hv_threshold");
-    TH1F *hw_threshold = (TH1F*)input_tf->Get("hw_threshold");
-  
-    hu_threshold->SetDirectory(output_tf);
-    hv_threshold->SetDirectory(output_tf);
-    hw_threshold->SetDirectory(output_tf);
-  
-
-
-  
-    // temporary ...
-
-  
-    TH2F *hu_decon = new TH2F("hu_decon","hu_decon",nwire_u,-0.5,nwire_u-0.5,int(nticks/nrebin),0,nticks);
-    TH2F *hv_decon = new TH2F("hv_decon","hv_decon",nwire_v,-0.5+nwire_u,nwire_v-0.5+nwire_u,int(nticks/nrebin),0,nticks);
-    TH2F *hw_decon = new TH2F("hw_decon","hw_decon",nwire_w,-0.5+nwire_u+nwire_v,nwire_w-0.5+nwire_u+nwire_v,int(nticks/nrebin),0,nticks);
-
-  
-    auto traces = frame_decon->traces();
-    for (auto trace : *traces.get()) {
-        int tbin = trace->tbin();
-        int ch = trace->channel();
-        auto charges = trace->charge();
-        if (ch < nwire_u){
-            int counter = 0;
-            int rebin_counter = 0;
-            float acc_charge = 0;
-      
-            for (auto q : charges) {
-                if (rebin_counter < nrebin){
-                    acc_charge += q;
-                    rebin_counter ++;
-                }
-                if (rebin_counter == nrebin){
-                    counter ++;
-                    hu_decon->SetBinContent(ch+1,tbin+counter,acc_charge); 
-                    //reset ... 
-                    rebin_counter = 0;
-                    acc_charge = 0;
-                }
-            }
-        }else if (ch < nwire_v + nwire_u){
-
-            int counter = 0;
-            int rebin_counter = 0;
-            float acc_charge = 0;
-      
-            for (auto q : charges) {
-	
-                if (rebin_counter < nrebin){
-                    acc_charge += q;
-                    rebin_counter ++;
-                }
-                if (rebin_counter == nrebin){
-                    counter ++;
-                    hv_decon->SetBinContent(ch+1-nwire_u,tbin+counter,acc_charge); 
-                    //reset ... 
-                    rebin_counter = 0;
-                    acc_charge = 0;
-                }
-            }
-
-      
-            // int counter = 0;
-            // for (auto q : charges) {
-            // 	counter ++;
-            // 	hv_decon->SetBinContent(ch+1-nwire_u,tbin+counter,q); 
-	
-            // }
-        }else{
-
-            int counter = 0;
-            int rebin_counter = 0;
-            float acc_charge = 0;
-      
-            for (auto q : charges) {
-	
-                if (rebin_counter < nrebin){
-                    acc_charge += q;
-                    rebin_counter ++;
-                }
-                if (rebin_counter == nrebin){
-                    counter ++;
-                    hw_decon->SetBinContent(ch+1-nwire_u-nwire_v,tbin+counter,acc_charge); 
-                    //reset ... 
-                    rebin_counter = 0;
-                    acc_charge = 0;
-                }
-            }
-      
-            // int counter = 0;
-            // for (auto q : charges) {
-            // 	counter ++;
-            // 	hw_decon->SetBinContent(ch+1-nwire_u-nwire_v,tbin+counter,q); 
-	
-            // }
+    // figure out what histograms the user wants to "shunt" to the
+    // output.
+    std::vector<std::string> toshunt = known_cateogries;
+    auto jshunt = m_cfg["shunt"];
+    if (!jshunt.empty()) {
+        toshunt.clear();
+        for (auto jht : jshunt) {
+            toshunt.push_back(jht.asString());
         }
     }
+    std::vector<std::string> tmp;
+    for (auto ht : toshunt) {
+        if (ht != histtype) {   // exclude the one we are actually
+            tmp.push_back(ht);  // writing from the frame
+        }
+    }
+    toshunt = tmp;
+        
+    // sus out channel and tick bins
+    std::vector<int> uvwt[4];
+    ITrace::vector traces[3];
+    for (auto trace : *frame->traces()) {
+        const int chid = trace->channel();
+        auto wpid = m_anode->resolve(chid);
+        const int iplane = wpid.index();
+        if (iplane<0 || iplane>=3) {
+            THROW(RuntimeError() << errmsg{"Illegal wpid"});
+        }
+        uvwt[iplane].push_back(chid);
+        traces[iplane].push_back(trace);
+        uvwt[3].push_back(trace->tbin());
+        uvwt[3].push_back(trace->tbin() + trace->charge().size());
+    }
+    std::vector<Binning> binnings;
+    for (int ind=0; ind<4; ++ind) {
+        auto const& one = uvwt[ind];
+        auto mme = std::minmax_element(one.begin(), one.end());
+        const int vmin = *mme.first;
+        const int vmax = *mme.second;
+        if (ind == 3) {
+            // Keep histogram bounds still in original tick number but rebin
+            const int n = vmax - vmin;
+            binnings.push_back(Binning(n/nrebin, vmin, vmax));
+        }
+        else {
+            // Channel-centered binning
+            const double diff = vmax - vmin;
+            binnings.push_back(Binning(diff+1, vmin-0.5, vmax+0.5));
+        } 
+    }
 
+    TFile *input_tf = TFile::Open(ifname.c_str());
+    TFile* output_tf = TFile::Open(ofname.c_str(), "RECREATE");
 
-  
-    // save bad channels 
-    TTree *T_bad = new TTree("T_bad","T_bad");
-    int chid, plane, start_time,end_time;
-    T_bad->Branch("chid",&chid,"chid/I");
-    T_bad->Branch("plane",&plane,"plane/I");
-    T_bad->Branch("start_time",&start_time,"start_time/I");
-    T_bad->Branch("end_time",&end_time,"end_time/I");
-    T_bad->SetDirectory(output_tf);
+    // do evil shunting from input file
+    {
+        TTree *Trun = ((TTree*)input_tf->Get("Trun"))->CloneTree();
+        Trun->SetDirectory(output_tf);
+    }
 
-    TTree *T_lf = new TTree("T_lf","T_lf");
-    int channel;
-    T_lf->Branch("channel",&channel,"channel/I");
-  
+    // more evilness.  thresholds get rewritten, if they exist, with
+    // stuff stashed in the channel mask maps, themselves an unding
+    // source of evilness.
+    std::vector<TH1F*> thresholds(3, nullptr);
 
-    Waveform::ChannelMaskMap input_cmm = frame_decon->masks();
-    for (auto const& it: input_cmm) {
-
-        if (it.first == "bad"){ // save bad ... 
-            //std::cout << "Xin1: " << it.first << " " << it.second.size() << std::endl;
-            for (auto const &it1 : it.second){
-                chid = it1.first;
-                if (chid < nwire_u){
-                    plane = 0;
-                }else if (chid < nwire_v + nwire_u){
-                    plane = 1;
-                }else{
-                    plane = 2;
-                }
-                //std::cout << "Xin1: " << chid << " " << plane << " " << it1.second.size() << std::endl;
-                for (size_t ind = 0; ind < it1.second.size(); ++ind){
-                    start_time = it1.second[ind].first;
-                    end_time = it1.second[ind].second;
-                    T_bad->Fill();
-                }
+    for (auto ht : toshunt) {
+        for (int iplane=0; iplane<3; ++iplane) {
+            const std::string name = Form("h%c_%s", 'u'+iplane, ht.c_str());
+            TH1* obj = (TH1*)input_tf->Get(name.c_str());
+            if (!obj) {
+                std::cerr <<"MagnifySink: warning \"" << name << "\" not found in " << ifname << std::endl;
+                continue;
             }
-        }else if (it.first =="lf_noisy"){
-            for (auto const &it1 : it.second){
-                channel = it1.first;
-                T_lf->Fill();
-            }
-      
-        }else if (it.first=="threshold"){
-            for (auto const &it1 : it.second){
-                chid = it1.first;
-                float threshold = it1.second[0].first/it1.second[0].second;
-                if (chid < nwire_u){
-                    hu_threshold->SetBinContent(chid+1,threshold*nrebin*3.0);
-                }else if (chid < nwire_u+nwire_v){
-                    hv_threshold->SetBinContent(chid+1-nwire_u,threshold*nrebin*3.0);
-                }else{
-                    hw_threshold->SetBinContent(chid+1-nwire_u-nwire_v,threshold*nrebin*3.0);
-                }
-	 
+            std::cerr <<"MagnifySink: evilly shunting \"" << name << "\"\n";
+            obj->SetDirectory(output_tf);
+            if (ht == "threshold") {
+                std::cerr <<iplane<<": " << obj->IsA()->ClassName() << std::endl;
+                thresholds[iplane] = (TH1F*)obj;
             }
         }
+    }
+                
+    // make actual output histogram
+    std::vector<TH2F*> hists;
+    for (int ind=0; ind<3; ++ind) {
+        const std::string name = Form("h%c_%s", 'u'+ind, histtype.c_str());
+        Binning cbin = binnings[ind];
+        Binning tbin = binnings[3];
+        std::cerr << "MagnifySink:"
+                  << " cbin:"<<cbin.nbins()<<"["<<cbin.min() << "," << cbin.max() << "]"
+                  << " tbin:"<<tbin.nbins()<<"["<<tbin.min() << "," << tbin.max() << "]\n";
 
+        TH2F* hist = new TH2F(name.c_str(), name.c_str(),
+                              cbin.nbins(), cbin.min(), cbin.max(),
+                              tbin.nbins(), tbin.min(), tbin.max());
+        hist->SetDirectory(output_tf);
+        for (auto trace : traces[ind]) {
+            const int tbin = trace->tbin();
+            const int ch = trace->channel();
+            auto const& charges = trace->charge();
+            for (size_t itick=0; itick < charges.size(); ++itick) {
+                hist->Fill(ch, tbin+itick, charges[itick]);
+                // note: Xin's original jumped through hoops to use
+                // SetBinContent().  Do I miss something?
+            }
+        }
+        if (thresholds.size() < 3) { // make these fresh if we don't already have them.
+            const std::string name = Form("h%c_threshold", 'u'+ind);
+            TH1F* thresh = new TH1F(name.c_str(), name.c_str(),
+                                    cbin.nbins(), cbin.min(), cbin.max());
+            thresholds.push_back(thresh);
+            thresh->SetDirectory(output_tf);
+        }        
+    }
     
+    {
+        // save "bad" channels 
+        TTree *T_bad = new TTree("T_bad","T_bad");
+        int chid, plane, start_time,end_time;
+        T_bad->Branch("chid",&chid,"chid/I");
+        T_bad->Branch("plane",&plane,"plane/I");
+        T_bad->Branch("start_time",&start_time,"start_time/I");
+        T_bad->Branch("end_time",&end_time,"end_time/I");
+        T_bad->SetDirectory(output_tf);
+
+        // save "noisy" channels
+        TTree *T_lf = new TTree("T_lf","T_lf");
+        int channel;
+        T_lf->Branch("channel",&channel,"channel/I");
+
+        Waveform::ChannelMaskMap input_cmm = frame->masks();
+        for (auto const& it: input_cmm) {
+            
+            if (it.first == "bad"){ // save bad ... 
+                for (auto const &it1 : it.second){
+                    chid = it1.first;
+                    plane = m_anode->resolve(chid).index();
+                    for (size_t ind = 0; ind < it1.second.size(); ++ind){
+                        start_time = it1.second[ind].first;
+                        end_time = it1.second[ind].second;
+                        T_bad->Fill();
+                    }
+                }
+                continue;
+            }
+
+            if (it.first =="lf_noisy"){
+                for (auto const &it1 : it.second){
+                    channel = it1.first;
+                    T_lf->Fill();
+                }
+                continue;
+            }
+            if (it.first=="threshold"){ 
+                for (auto const &it1 : it.second){
+                    chid = it1.first;
+                    TH1F* hthresh = thresholds[plane]; // evil
+                    const float tval = it1.second[0].first/it1.second[0].second; // evilevil
+                    hthresh->SetBinContent(chid+1, tval*nrebin*3.0); // evilevilevil
+                }
+                continue;
+            }
+        }
     }
 
+
+    std::cerr << "MagnifySink: closing output file\n";
     output_tf->Write();
     output_tf->Close();
-  
+
+    return true;
 }

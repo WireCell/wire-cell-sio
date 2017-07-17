@@ -10,6 +10,7 @@
 
 #include "WireCellIface/IFrameSink.h"
 #include "WireCellIface/IConfigurable.h"
+#include "WireCellIface/IAnodePlane.h"
 
 namespace WireCell {
     namespace Sio {
@@ -28,7 +29,7 @@ namespace WireCell {
             virtual void configure(const WireCell::Configuration& config);
         private:
             Configuration m_cfg;
-
+            IAnodePlane::pointer m_anode;
         };
     }
 }
