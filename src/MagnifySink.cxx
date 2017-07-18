@@ -124,39 +124,44 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
         } 
     }
 
+    std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
     TFile *input_tf = TFile::Open(ifname.c_str());
+    std::cerr << "MagnifySink: opening for output: " << ofname << std::endl;
     TFile* output_tf = TFile::Open(ofname.c_str(), "RECREATE");
 
     // do evil shunting from input file
     {
-        TTree *Trun = ((TTree*)input_tf->Get("Trun"))->CloneTree();
-        Trun->SetDirectory(output_tf);
+        TTree* tree = dynamic_cast<TTree*>(input_tf->Get("Trun"));
+        tree = tree->CloneTree();
+        tree->SetDirectory(output_tf);
     }
 
     // more evilness.  thresholds get rewritten, if they exist, with
-    // stuff stashed in the channel mask maps, themselves an unding
+    // stuff stashed in the channel mask maps, themselves an unending
     // source of evilness.
-    std::vector<TH1F*> thresholds(3, nullptr);
+    std::vector<TH1I*> thresholds(3, nullptr);
 
     for (auto ht : toshunt) {
         for (int iplane=0; iplane<3; ++iplane) {
             const std::string name = Form("h%c_%s", 'u'+iplane, ht.c_str());
-            TH1* obj = (TH1*)input_tf->Get(name.c_str());
+            TH1* obj = dynamic_cast<TH1*>(input_tf->Get(name.c_str()));
             if (!obj) {
                 std::cerr <<"MagnifySink: warning \"" << name << "\" not found in " << ifname << std::endl;
                 continue;
             }
-            std::cerr <<"MagnifySink: evilly shunting \"" << name << "\"\n";
+            std::cerr <<"MagnifySink: copy \"" << name << "\" directly from input to output file\n";
             obj->SetDirectory(output_tf);
             if (ht == "threshold") {
-                std::cerr <<iplane<<": " << obj->IsA()->ClassName() << std::endl;
-                thresholds[iplane] = (TH1F*)obj;
+                //std::cerr <<iplane<<": " << obj->IsA()->GetName() << std::endl;
+                TH1I* thresh = dynamic_cast<TH1I*>(obj);
+                if (!thresh) {
+                    THROW(ValueError() << errmsg{"wtf"});
+                }
+                thresholds.at(iplane) = thresh;
             }
         }
     }
                 
-    // make actual output histogram
-    std::vector<TH2F*> hists;
     for (int ind=0; ind<3; ++ind) {
         const std::string name = Form("h%c_%s", 'u'+ind, histtype.c_str());
         Binning cbin = binnings[ind];
@@ -179,11 +184,12 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
                 // SetBinContent().  Do I miss something?
             }
         }
-        if (thresholds.size() < 3) { // make these fresh if we don't already have them.
+        if (nullptr == thresholds.at(ind)) { // make these fresh if we don't already have them.
             const std::string name = Form("h%c_threshold", 'u'+ind);
-            TH1F* thresh = new TH1F(name.c_str(), name.c_str(),
+            std::cerr << "MagnifySink: making new thresholds " << name << std::endl;
+            TH1I* thresh = new TH1I(name.c_str(), name.c_str(),
                                     cbin.nbins(), cbin.min(), cbin.max());
-            thresholds.push_back(thresh);
+            thresholds.at(ind) = thresh;
             thresh->SetDirectory(output_tf);
         }        
     }
@@ -229,9 +235,11 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
             if (it.first=="threshold"){ 
                 for (auto const &it1 : it.second){
                     chid = it1.first;
-                    TH1F* hthresh = thresholds[plane]; // evil
-                    const float tval = it1.second[0].first/it1.second[0].second; // evilevil
-                    hthresh->SetBinContent(chid+1, tval*nrebin*3.0); // evilevilevil
+                    const int iplane = m_anode->resolve(chid).index();
+                    TH1I* hthresh = thresholds.at(iplane); // evil
+                    Binning cbin = binnings[iplane];
+                    const float tval = it1.second[0].first/((float)it1.second[0].second); // evilevil
+                    hthresh->SetBinContent(cbin.bin(chid)+1, tval*nrebin*3.0); // evilevilevil
                 }
                 continue;
             }
@@ -239,7 +247,7 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
     }
 
 
-    std::cerr << "MagnifySink: closing output file\n";
+    std::cerr << "MagnifySink: closing output file " << ofname << std::endl;
     output_tf->Write();
     output_tf->Close();
 
