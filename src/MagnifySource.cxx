@@ -51,8 +51,6 @@ bool Sio::MagnifySource::operator()(IFrame::pointer& out)
 	hists[iplane] = (TH2*)tfile->Get(name.c_str());
     }
 
-    WireCell::Waveform::ChannelMaskMap cmm;
-
     int frame_ident=0;
     double frame_time=0;
     TTree *trun = (TTree*)tfile->Get("Trun");
@@ -61,32 +59,46 @@ bool Sio::MagnifySource::operator()(IFrame::pointer& out)
         //trun->SetBranchAddress("time_offset", &frame_time);??
         trun->GetEntry(0);
     }
+    else {
+        std::cerr << "MagnifySource: \"run\" tree not in input, using frame ident=0, time=0\n";
+    }
 
 
+    WireCell::Waveform::ChannelMaskMap cmm;
     TTree *T_bad = (TTree*)tfile->Get("T_bad");
-    int chid=0, plane=0, start_time=0, end_time=0;
-    T_bad->SetBranchAddress("chid",&chid);
-    T_bad->SetBranchAddress("plane",&plane);
-    T_bad->SetBranchAddress("start_time",&start_time);
-    T_bad->SetBranchAddress("end_time",&end_time);
+    if (T_bad) { 
+        int chid=0, plane=0, start_time=0, end_time=0;
+        T_bad->SetBranchAddress("chid",&chid);
+        T_bad->SetBranchAddress("plane",&plane);
+        T_bad->SetBranchAddress("start_time",&start_time);
+        T_bad->SetBranchAddress("end_time",&end_time);
       
-    for (int i=0;i!=T_bad->GetEntries();i++){
-        T_bad->GetEntry(i);
-        WireCell::Waveform::BinRange chirped_bins;
-        chirped_bins.first = start_time;
-        chirped_bins.second = end_time;
-        cmm["bad"][chid].push_back(chirped_bins);
+        for (int i=0;i!=T_bad->GetEntries();i++){
+            T_bad->GetEntry(i);
+            WireCell::Waveform::BinRange chirped_bins;
+            chirped_bins.first = start_time;
+            chirped_bins.second = end_time;
+            cmm["bad"][chid].push_back(chirped_bins);
+        }
+    }
+    else {
+        std::cerr << "MagnifySource: \"bad\" tree not in input, not setting \"bad\" channel mask map\n";
     }
       
     TTree *T_lf = (TTree*)tfile->Get("T_lf");
-    int channel=0;
-    T_lf->SetBranchAddress("channel",&channel);
-    for (int i=0;i!=T_lf->GetEntries();i++){
-        T_lf->GetEntry(i);
-        WireCell::Waveform::BinRange chirped_bins;
-        chirped_bins.first = 0;
-        chirped_bins.second = hists[0]->GetNbinsY();
-        cmm["lf_noisy"][channel].push_back(chirped_bins);
+    if (T_lf) {
+        int channel=0;
+        T_lf->SetBranchAddress("channel",&channel);
+        for (int i=0;i!=T_lf->GetEntries();i++){
+            T_lf->GetEntry(i);
+            WireCell::Waveform::BinRange chirped_bins;
+            chirped_bins.first = 0;
+            chirped_bins.second = hists[0]->GetNbinsY();
+            cmm["lf_noisy"][channel].push_back(chirped_bins);
+        }
+    }
+    else {
+        std::cerr << "MagnifySource:  \"lf\" tree not in input, not setting \"lf_noisy\" channel mask map\n";
     }
 
     ITrace::vector traces;

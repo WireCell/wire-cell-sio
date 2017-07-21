@@ -132,8 +132,10 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
     // do evil shunting from input file
     {
         TTree* tree = dynamic_cast<TTree*>(input_tf->Get("Trun"));
-        tree = tree->CloneTree();
-        tree->SetDirectory(output_tf);
+        if (tree) {
+            tree = tree->CloneTree();
+            tree->SetDirectory(output_tf);
+        }
     }
 
     // more evilness.  thresholds get rewritten, if they exist, with
@@ -149,7 +151,15 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
                 std::cerr <<"MagnifySink: warning \"" << name << "\" not found in " << ifname << std::endl;
                 continue;
             }
-            std::cerr <<"MagnifySink: copy \"" << name << "\" directly from input to output file\n";
+            const int nbinsx = obj->GetNbinsX();
+            TH2* obj2 = dynamic_cast<TH2*>(obj);
+            if (obj2) {
+                const int nbinsy = obj->GetNbinsY();
+                std::cerr <<"MagnifySink: copy \"" << name << "\" 2D:["<<nbinsx<<" X " <<nbinsy<<"] directly from input to output file\n";
+            }
+            else {
+                std::cerr <<"MagnifySink: copy \"" << name << "\" 1D:["<<nbinsx<<"] directly from input to output file\n";
+            }
             obj->SetDirectory(output_tf);
             if (ht == "threshold") {
                 //std::cerr <<iplane<<": " << obj->IsA()->GetName() << std::endl;
