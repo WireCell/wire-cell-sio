@@ -165,7 +165,14 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
                 const int ch = trace->channel();
                 auto const& charges = trace->charge();
                 for (size_t itick=0; itick < charges.size(); ++itick) {
-                    hist->Fill(ch, tbin+itick, charges[itick]);
+                    // Using what should be an identical call to
+                    // Fill() ends up with a file that is more than
+                    // two times bigger:
+                    // 826M Jul 27 18:22 orig-bl-nf-fill-tbin.root
+                    // 342M Jul 27 18:28 orig-bl-nf-setbincontent-tplus1.root
+                    //hist->Fill(ch, tbin+itick+0.5, charges[itick]);
+
+                    hist->SetBinContent(cbin.bin(ch)+1, tbin+itick+1, charges[itick]);
                 }
             }
         }
