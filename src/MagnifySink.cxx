@@ -16,7 +16,6 @@ WIRECELL_FACTORY(MagnifySink, WireCell::Sio::MagnifySink, WireCell::IFrameSink, 
 
 using namespace WireCell;
 
-static std::vector<std::string> known_cateogries{"threshold","baseline","orig","raw","decon"};
 
 Sio::MagnifySink::MagnifySink()
 {
@@ -32,7 +31,12 @@ void Sio::MagnifySink::configure(const WireCell::Configuration& cfg)
 
     fn = cfg["input_filename"].asString();
     if (fn.empty()) {
-        THROW(ValueError() << errmsg{"Must provide input filename to MagnifySink"});
+        if (cfg["shunk"].empty()) {
+            std::cerr << "MagnifySink no objects to copy but given input: " << fn << std::endl;
+        }
+        else {
+            THROW(ValueError() << errmsg{"MagnifySink: must provide input filename to shunt objects to output"});
+        }
     }
 
     fn = cfg["output_filename"].asString();
@@ -52,60 +56,55 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
 
     cfg["anode"] = "AnodePlane";
 
-    cfg["rebin"] = 1;           // fixme: so does this.  Rebinning should be done in an IFrameFilter
     cfg["input_filename"] = ""; // fixme: this TOTALLY violates the design of wire cell DFP
-    // More evilness: these are the histogram types that I know about and will shunt by default.
-    for (size_t ind=0; ind<known_cateogries.size(); ++ind) {
-        cfg["shunt"][(int)ind] = known_cateogries[ind];
-    }
+
+    cfg["shunt"] = Json::arrayValue;
 
     cfg["output_filename"] = "";
-    cfg["histtype"] = "decon";
+    cfg["frames"] = Json::arrayValue;
 
     return cfg;
 }
 
-
-bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
+typedef std::unordered_set<std::string> string_set_t;
+string_set_t getset(const WireCell::Configuration& cfg)
 {
-    std::string ifname = m_cfg["input_filename"].asString();
-    std::string ofname = m_cfg["output_filename"].asString();
-    const int nrebin = m_cfg["rebin"].asInt();
-    std::string histtype = m_cfg["histtype"].asString();
+    string_set_t ret;
+    for (auto jone : cfg) {
+        ret.insert(jone.asString());
+    }
+    return ret;
+}
 
-    // figure out what histograms the user wants to "shunt" to the
-    // output.
-    std::vector<std::string> toshunt = known_cateogries;
-    auto jshunt = m_cfg["shunt"];
-    if (!jshunt.empty()) {
-        toshunt.clear();
-        for (auto jht : jshunt) {
-            toshunt.push_back(jht.asString());
-        }
+// fixme: this little helper needs to move to FrameUtil
+ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
+{
+    ITrace::vector ret;
+    auto const& all_traces = frame->traces();
+    for (size_t index : frame->tagged_traces(tag)) {
+        ret.push_back(all_traces->at(index));
     }
-    std::vector<std::string> tmp;
-    for (auto ht : toshunt) {
-        if (ht != histtype) {   // exclude the one we are actually
-            tmp.push_back(ht);  // writing from the frame
-        }
-    }
-    toshunt = tmp;
-        
-    // sus out channel and tick bins
+    return ret;
+}
+
+
+std::vector<WireCell::Binning> collate_byplane(const ITrace::vector traces, const IAnodePlane::pointer anode,
+                                               ITrace::vector byplane[])
+{
     std::vector<int> uvwt[4];
-    ITrace::vector traces[3];
-    for (auto trace : *frame->traces()) {
+    for (auto trace : traces) {
         const int chid = trace->channel();
-        auto wpid = m_anode->resolve(chid);
+        auto wpid = anode->resolve(chid);
         const int iplane = wpid.index();
         if (iplane<0 || iplane>=3) {
             THROW(RuntimeError() << errmsg{"Illegal wpid"});
         }
         uvwt[iplane].push_back(chid);
-        traces[iplane].push_back(trace);
+        byplane[iplane].push_back(trace);
         uvwt[3].push_back(trace->tbin());
         uvwt[3].push_back(trace->tbin() + trace->charge().size());
     }
+
     std::vector<Binning> binnings;
     for (int ind=0; ind<4; ++ind) {
         auto const& one = uvwt[ind];
@@ -113,9 +112,8 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
         const int vmin = *mme.first;
         const int vmax = *mme.second;
         if (ind == 3) {
-            // Keep histogram bounds still in original tick number but rebin
             const int n = vmax - vmin;
-            binnings.push_back(Binning(n/nrebin, vmin, vmax));
+            binnings.push_back(Binning(n, vmin, vmax));
         }
         else {
             // Channel-centered binning
@@ -123,106 +121,126 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
             binnings.push_back(Binning(diff+1, vmin-0.5, vmax+0.5));
         } 
     }
+    return binnings;
+}
 
-    std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
-    TFile *input_tf = TFile::Open(ifname.c_str());
+
+bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
+{
+    if (!frame) {
+        // eos 
+        return true;
+    }
+
+    std::string ofname = m_cfg["output_filename"].asString();
     std::cerr << "MagnifySink: opening for output: " << ofname << std::endl;
     TFile* output_tf = TFile::Open(ofname.c_str(), "RECREATE");
 
-    // do evil shunting from input file
-    {
-        TTree* tree = dynamic_cast<TTree*>(input_tf->Get("Trun"));
+    for (auto tag : getset(m_cfg["frames"])) {
+
+        ITrace::vector traces_byplane[3], traces = get_tagged_traces(frame, tag);
+        if (traces.empty()) {
+            std::cerr << "MagnifySink: no tagged traces for \"" << tag << "\"\n";
+            THROW(ValueError() << errmsg{"MagnifySink: no tagged traces"});
+        }
+        auto binnings = collate_byplane(traces, m_anode, traces_byplane);
+
+        Binning tbin = binnings[3];
+        for (int iplane=0; iplane < 3; ++iplane) {
+
+            const std::string name = Form("h%c_%s", 'u'+iplane, tag.c_str());
+            Binning cbin = binnings[iplane];
+            std::cerr << "MagnifySink:"
+                      << " cbin:"<<cbin.nbins()<<"["<<cbin.min() << "," << cbin.max() << "]"
+                      << " tbin:"<<tbin.nbins()<<"["<<tbin.min() << "," << tbin.max() << "]\n";
+
+            TH2F* hist = new TH2F(name.c_str(), name.c_str(),
+                                  cbin.nbins(), cbin.min(), cbin.max(),
+                                  tbin.nbins(), tbin.min(), tbin.max());
+
+            hist->SetDirectory(output_tf);
+            
+            for (auto trace : traces_byplane[iplane]) {
+                const int tbin = trace->tbin();
+                const int ch = trace->channel();
+                auto const& charges = trace->charge();
+                for (size_t itick=0; itick < charges.size(); ++itick) {
+                    hist->Fill(ch, tbin+itick, charges[itick]);
+                }
+            }
+        }
+    }
+
+
+    // Handle any trace summaries
+    for (auto tag : getset(m_cfg["summaries"])) {
+        auto traces = get_tagged_traces(frame, tag);
+        auto summary = frame->trace_summary(tag);
+
+        const size_t nchannels = summary.size();
+        const int channel0 = traces.front()->channel();
+
+        // Warning: makes huge assumption that summary is defined over
+        // a contiguous and ordered span of channel numbers!  Works
+        // for MicroBooNE.
+        TH1F* hist = new TH1F(("h"+tag).c_str(),("h"+tag).c_str(),
+                              nchannels, channel0, channel0 + nchannels);
+        for (size_t ch=channel0; ch < channel0+nchannels; ++ch) {
+            hist->SetBinContent(1+ch, summary[ch]);
+        }
+        hist->SetDirectory(output_tf);
+    }
+
+
+    // Now deal with "shunting" input Magnify data to output.
+    std::string ifname = m_cfg["input_filename"].asString();
+    if (ifname.empty()) {
+        // good, we shouldn't be peeking into the input file anyways.
+        return true;
+    }
+    auto toshunt = getset(m_cfg["shunt"]);
+    if (toshunt.empty()) {
+        std::cerr << "MagnifySink no objects to copy but given input: " << ifname << std::endl;
+        return true;
+    }
+    std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
+    TFile *input_tf = TFile::Open(ifname.c_str());
+
+    for (auto name : toshunt) {
+        TObject* obj = input_tf->Get(name.c_str());
+
+        TTree* tree = dynamic_cast<TTree*>(obj);
         if (tree) {
             tree = tree->CloneTree();
             tree->SetDirectory(output_tf);
+            continue;
         }
+
+        TH1* hist = dynamic_cast<TH1*>(obj);
+        if (hist) {
+            hist->SetDirectory(output_tf);
+            continue;
+        }
+
     }
 
-    // more evilness.  thresholds get rewritten, if they exist, with
-    // stuff stashed in the channel mask maps, themselves an unending
-    // source of evilness.
-    std::vector<TH1I*> thresholds(3, nullptr);
-
-    for (auto ht : toshunt) {
-        for (int iplane=0; iplane<3; ++iplane) {
-            const std::string name = Form("h%c_%s", 'u'+iplane, ht.c_str());
-            TH1* obj = dynamic_cast<TH1*>(input_tf->Get(name.c_str()));
-            if (!obj) {
-                std::cerr <<"MagnifySink: warning \"" << name << "\" not found in " << ifname << std::endl;
-                continue;
-            }
-            const int nbinsx = obj->GetNbinsX();
-            TH2* obj2 = dynamic_cast<TH2*>(obj);
-            if (obj2) {
-                const int nbinsy = obj->GetNbinsY();
-                std::cerr <<"MagnifySink: copy \"" << name << "\" 2D:["<<nbinsx<<" X " <<nbinsy<<"] directly from input to output file\n";
-            }
-            else {
-                std::cerr <<"MagnifySink: copy \"" << name << "\" 1D:["<<nbinsx<<"] directly from input to output file\n";
-            }
-            obj->SetDirectory(output_tf);
-            if (ht == "threshold") {
-                //std::cerr <<iplane<<": " << obj->IsA()->GetName() << std::endl;
-                TH1I* thresh = dynamic_cast<TH1I*>(obj);
-                if (!thresh) {
-                    THROW(ValueError() << errmsg{"wtf"});
-                }
-                thresholds.at(iplane) = thresh;
-            }
-        }
-    }
-                
-    for (int ind=0; ind<3; ++ind) {
-        const std::string name = Form("h%c_%s", 'u'+ind, histtype.c_str());
-        Binning cbin = binnings[ind];
-        Binning tbin = binnings[3];
-        std::cerr << "MagnifySink:"
-                  << " cbin:"<<cbin.nbins()<<"["<<cbin.min() << "," << cbin.max() << "]"
-                  << " tbin:"<<tbin.nbins()<<"["<<tbin.min() << "," << tbin.max() << "]\n";
-
-        TH2F* hist = new TH2F(name.c_str(), name.c_str(),
-                              cbin.nbins(), cbin.min(), cbin.max(),
-                              tbin.nbins(), tbin.min(), tbin.max());
-        hist->SetDirectory(output_tf);
-        for (auto trace : traces[ind]) {
-            const int tbin = trace->tbin();
-            const int ch = trace->channel();
-            auto const& charges = trace->charge();
-            for (size_t itick=0; itick < charges.size(); ++itick) {
-                hist->Fill(ch, tbin+itick, charges[itick]);
-                // note: Xin's original jumped through hoops to use
-                // SetBinContent().  Do I miss something?
-            }
-        }
-        if (nullptr == thresholds.at(ind)) { // make these fresh if we don't already have them.
-            const std::string name = Form("h%c_threshold", 'u'+ind);
-            std::cerr << "MagnifySink: making new thresholds " << name << std::endl;
-            TH1I* thresh = new TH1I(name.c_str(), name.c_str(),
-                                    cbin.nbins(), cbin.min(), cbin.max());
-            thresholds.at(ind) = thresh;
-            thresh->SetDirectory(output_tf);
-        }        
-    }
     
     {
-        // save "bad" channels 
-        TTree *T_bad = new TTree("T_bad","T_bad");
-        int chid, plane, start_time,end_time;
-        T_bad->Branch("chid",&chid,"chid/I");
-        T_bad->Branch("plane",&plane,"plane/I");
-        T_bad->Branch("start_time",&start_time,"start_time/I");
-        T_bad->Branch("end_time",&end_time,"end_time/I");
-        T_bad->SetDirectory(output_tf);
-
-        // save "noisy" channels
-        TTree *T_lf = new TTree("T_lf","T_lf");
-        int channel;
-        T_lf->Branch("channel",&channel,"channel/I");
-
         Waveform::ChannelMaskMap input_cmm = frame->masks();
         for (auto const& it: input_cmm) {
             
-            if (it.first == "bad"){ // save bad ... 
+            if (it.first == "bad"){
+
+                // save "bad" channels
+
+                TTree *T_bad = new TTree("T_bad","T_bad");
+                int chid, plane, start_time,end_time;
+                T_bad->Branch("chid",&chid,"chid/I");
+                T_bad->Branch("plane",&plane,"plane/I");
+                T_bad->Branch("start_time",&start_time,"start_time/I");
+                T_bad->Branch("end_time",&end_time,"end_time/I");
+                T_bad->SetDirectory(output_tf);
+
                 for (auto const &it1 : it.second){
                     chid = it1.first;
                     plane = m_anode->resolve(chid).index();
@@ -236,20 +254,15 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
             }
 
             if (it.first =="lf_noisy"){
+
+                // save "noisy" channels
+
+                TTree *T_lf = new TTree("T_lf","T_lf");
+                int channel;
+                T_lf->Branch("channel",&channel,"channel/I");
                 for (auto const &it1 : it.second){
                     channel = it1.first;
                     T_lf->Fill();
-                }
-                continue;
-            }
-            if (it.first=="threshold"){ 
-                for (auto const &it1 : it.second){
-                    chid = it1.first;
-                    const int iplane = m_anode->resolve(chid).index();
-                    TH1I* hthresh = thresholds.at(iplane); // evil
-                    Binning cbin = binnings[iplane];
-                    const float tval = it1.second[0].first/((float)it1.second[0].second); // evilevil
-                    hthresh->SetBinContent(cbin.bin(chid)+1, tval*nrebin*3.0); // evilevilevil
                 }
                 continue;
             }
