@@ -96,7 +96,7 @@ ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
 }
 
 
-std::vector<WireCell::Binning> collate_byplane(const ITrace::vector traces, const IAnodePlane::pointer anode,
+std::vector<WireCell::Binning> collate_byplane(const ITrace::vector& traces, const IAnodePlane::pointer anode,
                                                ITrace::vector byplane[])
 {
     std::vector<int> uvwt[4];
@@ -104,6 +104,7 @@ std::vector<WireCell::Binning> collate_byplane(const ITrace::vector traces, cons
         const int chid = trace->channel();
         auto wpid = anode->resolve(chid);
         const int iplane = wpid.index();
+        //std::cerr << "\tchid="<<chid<<" iplane="<<iplane<<" wpid="<<wpid<<std::endl;
         if (iplane<0 || iplane>=3) {
             THROW(RuntimeError() << errmsg{"Illegal wpid"});
         }
@@ -116,6 +117,11 @@ std::vector<WireCell::Binning> collate_byplane(const ITrace::vector traces, cons
     std::vector<Binning> binnings;
     for (int ind=0; ind<4; ++ind) {
         auto const& one = uvwt[ind];
+        if (one.empty()) {
+            std::cerr << "MagnifySink: bogus bounds " << ind << "\n";
+            THROW(ValueError() << errmsg{"MagnifySink: bogus bounds"});
+        }
+            
         auto mme = std::minmax_element(one.begin(), one.end());
         const int vmin = *mme.first;
         const int vmax = *mme.second;
@@ -151,6 +157,8 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
             std::cerr << "MagnifySink: no tagged traces for \"" << tag << "\"\n";
             THROW(ValueError() << errmsg{"MagnifySink: no tagged traces"});
         }
+
+        std::cerr << "MagnifySink: tag: \"" << tag << "\" with " << traces.size() << " traces\n";
         auto binnings = collate_byplane(traces, m_anode, traces_byplane);
 
         Binning tbin = binnings[3];
@@ -190,20 +198,46 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
     // Handle any trace summaries
     for (auto tag : getset(m_cfg["summaries"])) {
         auto traces = get_tagged_traces(frame, tag);
-        auto summary = frame->trace_summary(tag);
-
-        const size_t nchannels = summary.size();
-        const int channel0 = traces.front()->channel();
-
-        // Warning: makes huge assumption that summary is defined over
-        // a contiguous and ordered span of channel numbers!  Works
-        // for MicroBooNE.
-        TH1F* hist = new TH1F(("h"+tag).c_str(),("h"+tag).c_str(),
-                              nchannels, channel0, channel0 + nchannels);
-        for (size_t ch=channel0; ch < channel0+nchannels; ++ch) {
-            hist->SetBinContent(1+ch, summary[ch]);
+        if (traces.empty()) {
+            std::cerr << "MagnifySink: warning: no traces tagged with \"" << tag << "\", skipping summary\n";
+            continue;
         }
-        hist->SetDirectory(output_tf);
+        auto const& summary = frame->trace_summary(tag);
+        if (summary.empty()) {
+            std::cerr << "MagnifySink: warning: empty summary tagged with \"" << tag << "\", skipping summary\n";
+            continue;
+        }
+            
+        std::cerr << "MagnifySink: saving summaries tagged with \"" << tag << "\" into per-plane hists\n";
+
+        // warning: this is going to get ugly.  we jump through these
+        // hoops to avoid hard coding microboone channel ranges and
+        // allow for sparse summaries on the domain of channels;
+        const int ntot = traces.size();
+        std::vector<int> perplane_channels[3];
+        std::vector<double> perplane_values[3];
+        for (int ind=0; ind<ntot; ++ind) {
+            const int chid = traces[ind]->channel();
+            const int iplane = m_anode->resolve(chid).index();
+            perplane_channels[iplane].push_back(chid);
+            perplane_values[iplane].push_back(summary[ind]);
+        }
+        for (int iplane=0; iplane<3; ++iplane) {
+            std::vector<int>& chans = perplane_channels[iplane];
+            std::vector<double>& vals = perplane_values[iplane];
+            auto mme = std::minmax_element(chans.begin(), chans.end());
+            const int ch0 = *mme.first;
+            const int chf = *mme.second;
+            const std::string hname = Form("h%c_%s", 'u'+iplane, tag.c_str());
+            TH1F* hist = new TH1F(hname.c_str(), hname.c_str(),
+                                  chf-ch0+1, ch0, chf);
+            for (size_t ind=0; ind<chans.size(); ++ind) {
+                const int ch = chans[ind];
+                const double val = vals[ind];
+                hist->Fill(ch+0.5, val);
+            }
+            hist->SetDirectory(output_tf);
+        }
     }
 
 
@@ -224,8 +258,13 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
     for (auto name : toshunt) {
         TObject* obj = input_tf->Get(name.c_str());
 
+        if (!obj) {
+            std::cerr << "MagnifySink: warning: failed to find input object: \"" << name << "\" for copying to output\n";
+        }
+
         TTree* tree = dynamic_cast<TTree*>(obj);
         if (tree) {
+            std::cerr << "MagnifySink: copying tree: \"" << name << "\"\n";
             tree = tree->CloneTree();
             tree->SetDirectory(output_tf);
             continue;
@@ -233,9 +272,12 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
 
         TH1* hist = dynamic_cast<TH1*>(obj);
         if (hist) {
+            std::cerr << "MagnifySink: copying hist: \"" << name << "\"\n";
             hist->SetDirectory(output_tf);
             continue;
         }
+
+        std::cerr << "MagnifySink: warning: object of unknown type: \"" << name << "\", will not copy\n";
 
     }
 
