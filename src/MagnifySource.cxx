@@ -42,6 +42,9 @@ WireCell::Configuration Sio::MagnifySource::default_configuration() const
     // tagged by both <tag> and the per-plane subset as
     // <planeletter>plane.
     cfg["frames"][0] = "raw";
+
+    // A list of pairs mapping a cmm key name to a ttree name.
+    cfg["cmmtree"] = Json::arrayValue;
     return cfg;
 }
 
@@ -71,48 +74,33 @@ bool Sio::MagnifySource::operator()(IFrame::pointer& out)
 
 
     WireCell::Waveform::ChannelMaskMap cmm;
-    {
-        TTree *T_bad = (TTree*)tfile->Get("T_bad");
-        if (T_bad) { 
-            int chid=0, plane=0, start_time=0, end_time=0;
-            T_bad->SetBranchAddress("chid",&chid);
-            T_bad->SetBranchAddress("plane",&plane);
-            T_bad->SetBranchAddress("start_time",&start_time);
-            T_bad->SetBranchAddress("end_time",&end_time);
-      
-            for (int i=0;i!=T_bad->GetEntries();i++){
-                T_bad->GetEntry(i);
-                WireCell::Waveform::BinRange chirped_bins;
-                chirped_bins.first = start_time;
-                chirped_bins.second = end_time;
-                cmm["bad"][chid].push_back(chirped_bins);
-            }
+    for (auto jcmmtree : m_cfg["cmmtree"]) {
+        auto cmmkey = jcmmtree[0].asString();
+        auto treename = jcmmtree[1].asString();
+        TTree *tree = dynamic_cast<TTree*>(tfile->Get(treename.c_str()));
+        if (!tree) {
+            std::cerr << "MagnifySource: failed to find tree \"" << treename << "\" in " << tfile->GetName() << std::endl;
+            THROW(IOError() << errmsg{"MagnifySource: failed to find tree."});
         }
-        else {
-            std::cerr << "MagnifySource: \"bad\" tree not in input, not setting \"bad\" channel mask map\n";
-        }
-    }
-      
-    { 
-        TTree *T_lf = (TTree*)tfile->Get("T_lf");
-        if (T_lf) {             
-            int channel=0;
-            T_lf->SetBranchAddress("channel",&channel);
-            const int nentries = T_lf->GetEntries();
-            for (int ind = 0; ind != nentries; ++ind){
-                T_lf->GetEntry(ind);
-                WireCell::Waveform::BinRange all_bins;
-                all_bins.first = 0;
-                all_bins.second = nticks-1;
-                cmm["lf_noisy"][channel].push_back(all_bins);
-            }
-            std::cerr << "MagnifySource:  "<<nentries<<" \"lf_noisy\" noisy channels\n";
-        }
-        else {
-            std::cerr << "MagnifySource:  \"lf\" tree not in input, not setting \"lf_noisy\" channel mask map\n";
-        }
-    }
 
+        std::cerr << "MagnifySource: loading channel mask \"" << cmmkey << "\" from tree \"" << treename << "\"\n";
+
+        int chid=0, plane=0, start_time=0, end_time=0;
+        tree->SetBranchAddress("chid",&chid);
+        tree->SetBranchAddress("plane",&plane);
+        tree->SetBranchAddress("start_time",&start_time);
+        tree->SetBranchAddress("end_time",&end_time);
+
+        const int nentries = tree->GetEntries();
+        for (int ientry = 0; ientry < nentries; ++ientry){
+            tree->GetEntry(ientry);
+            WireCell::Waveform::BinRange br;
+            br.first = start_time;
+            br.second = end_time;
+            cmm[cmmkey][chid].push_back(br);
+        }
+    }
+      
 
     ITrace::vector all_traces;
     std::unordered_map<IFrame::tag_t, IFrame::trace_list_t> tagged_traces;

@@ -56,12 +56,20 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
 
     cfg["anode"] = "AnodePlane";
 
-    cfg["input_filename"] = ""; // fixme: this TOTALLY violates the design of wire cell DFP
+    // fixme: this TOTALLY violates the design of wire cell DFP.
+    cfg["input_filename"] = ""; 
 
+    // List of TObjects to copy from input file to output file.
     cfg["shunt"] = Json::arrayValue;
 
+    // Name of ROOT file to write.
     cfg["output_filename"] = "";
+
+    // A list of trace tags defining which waveforms are saved to Magnify histograms.
     cfg["frames"] = Json::arrayValue;
+
+    // A list of pairs mapping a cmm key name to a ttree name.
+    cfg["cmmtree"] = Json::arrayValue;
 
     return cfg;
 }
@@ -233,45 +241,41 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
 
     
     {
+        std::unordered_map<std::string, std::string> cmmkey2treename;
+        for (auto jcmmtree : m_cfg["cmmtree"]) {
+            cmmkey2treename[jcmmtree[0].asString()] = jcmmtree[1].asString();
+        }
+
         Waveform::ChannelMaskMap input_cmm = frame->masks();
         for (auto const& it: input_cmm) {
-            
-            if (it.first == "bad"){
-
-                // save "bad" channels
-
-                TTree *T_bad = new TTree("T_bad","T_bad");
-                int chid, plane, start_time,end_time;
-                T_bad->Branch("chid",&chid,"chid/I");
-                T_bad->Branch("plane",&plane,"plane/I");
-                T_bad->Branch("start_time",&start_time,"start_time/I");
-                T_bad->Branch("end_time",&end_time,"end_time/I");
-                T_bad->SetDirectory(output_tf);
-
-                for (auto const &it1 : it.second){
-                    chid = it1.first;
-                    plane = m_anode->resolve(chid).index();
-                    for (size_t ind = 0; ind < it1.second.size(); ++ind){
-                        start_time = it1.second[ind].first;
-                        end_time = it1.second[ind].second;
-                        T_bad->Fill();
-                    }
-                }
+            auto cmmkey = it.first;
+            auto ct = cmmkey2treename.find(cmmkey);
+            if (ct == cmmkey2treename.end()) {
+                std::cerr << "MagnifySink: warning: no tree configured to save channel mask \"" << cmmkey << "\"\n";
                 continue;
             }
+            
+            auto treename = ct->second;
+            
+            std::cerr << "MagnifySink: saving channel mask \"" << cmmkey << "\" to tree \"" << treename << "\"\n";
 
-            if (it.first =="lf_noisy"){
+            TTree *tree = new TTree(treename.c_str(), treename.c_str());
+            int chid=0, plane=0, start_time=0, end_time=0;
+            tree->Branch("chid",&chid,"chid/I");
+            tree->Branch("plane",&plane,"plane/I");
+            tree->Branch("start_time",&start_time,"start_time/I");
+            tree->Branch("end_time",&end_time,"end_time/I");
+            tree->SetDirectory(output_tf);
 
-                // save "noisy" channels
-
-                TTree *T_lf = new TTree("T_lf","T_lf");
-                int channel;
-                T_lf->Branch("channel",&channel,"channel/I");
-                for (auto const &it1 : it.second){
-                    channel = it1.first;
-                    T_lf->Fill();
+            for (auto const &chmask : it.second){
+                chid = chmask.first;
+                plane = m_anode->resolve(chid).index();
+                auto mask = chmask.second;
+                for (size_t ind = 0; ind < mask.size(); ++ind){
+                    start_time = mask[ind].first;
+                    end_time = mask[ind].second;
+                    tree->Fill();
                 }
-                continue;
             }
         }
     }
