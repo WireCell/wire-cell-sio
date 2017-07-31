@@ -31,7 +31,7 @@ void Sio::MagnifySink::configure(const WireCell::Configuration& cfg)
 
     fn = cfg["input_filename"].asString();
     if (fn.empty()) {
-        if (cfg["shunk"].empty()) {
+        if (cfg["shunt"].empty()) {
             std::cerr << "MagnifySink no objects to copy but given input: " << fn << std::endl;
         }
         else {
@@ -241,47 +241,6 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
     }
 
 
-    // Now deal with "shunting" input Magnify data to output.
-    std::string ifname = m_cfg["input_filename"].asString();
-    if (ifname.empty()) {
-        // good, we shouldn't be peeking into the input file anyways.
-        return true;
-    }
-    auto toshunt = getset(m_cfg["shunt"]);
-    if (toshunt.empty()) {
-        std::cerr << "MagnifySink no objects to copy but given input: " << ifname << std::endl;
-        return true;
-    }
-    std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
-    TFile *input_tf = TFile::Open(ifname.c_str());
-
-    for (auto name : toshunt) {
-        TObject* obj = input_tf->Get(name.c_str());
-
-        if (!obj) {
-            std::cerr << "MagnifySink: warning: failed to find input object: \"" << name << "\" for copying to output\n";
-        }
-
-        TTree* tree = dynamic_cast<TTree*>(obj);
-        if (tree) {
-            std::cerr << "MagnifySink: copying tree: \"" << name << "\"\n";
-            tree = tree->CloneTree();
-            tree->SetDirectory(output_tf);
-            continue;
-        }
-
-        TH1* hist = dynamic_cast<TH1*>(obj);
-        if (hist) {
-            std::cerr << "MagnifySink: copying hist: \"" << name << "\"\n";
-            hist->SetDirectory(output_tf);
-            continue;
-        }
-
-        std::cerr << "MagnifySink: warning: object of unknown type: \"" << name << "\", will not copy\n";
-
-    }
-
-    
     {
         std::unordered_map<std::string, std::string> cmmkey2treename;
         for (auto jcmmtree : m_cfg["cmmtree"]) {
@@ -322,6 +281,49 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
         }
     }
 
+    {
+	// Now deal with "shunting" input Magnify data to output.
+	std::string ifname = m_cfg["input_filename"].asString();
+	if (ifname.empty()) {
+	    // good, we shouldn't be peeking into the input file anyways.
+	    return true;
+	}
+	auto toshunt = getset(m_cfg["shunt"]);
+	if (toshunt.empty()) {
+	    std::cerr << "MagnifySink no objects to copy but given input: " << ifname << std::endl;
+	    return true;
+	}
+	std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
+	TFile *input_tf = TFile::Open(ifname.c_str());
+
+	for (auto name : toshunt) {
+	    TObject* obj = input_tf->Get(name.c_str());
+
+	    if (!obj) {
+		std::cerr << "MagnifySink: warning: failed to find input object: \""
+			  << name << "\" for copying to output\n";
+	    }
+
+	    TTree* tree = dynamic_cast<TTree*>(obj);
+	    if (tree) {
+		std::cerr << "MagnifySink: copying tree: \"" << name << "\"\n";
+		tree = tree->CloneTree();
+		tree->SetDirectory(output_tf);
+		continue;
+	    }
+
+	    TH1* hist = dynamic_cast<TH1*>(obj);
+	    if (hist) {
+		std::cerr << "MagnifySink: copying hist: \"" << name << "\"\n";
+		hist->SetDirectory(output_tf);
+		continue;
+	    }
+
+	    std::cerr << "MagnifySink: warning: object of unknown type: \"" << name << "\", will not copy\n";
+
+	}
+    }
+    
 
     std::cerr << "MagnifySink: closing output file " << ofname << std::endl;
     output_tf->Write();
@@ -329,3 +331,8 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame)
 
     return true;
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 4
+// End:
