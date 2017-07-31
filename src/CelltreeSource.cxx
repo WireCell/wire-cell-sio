@@ -36,6 +36,7 @@ WireCell::Configuration Sio::CelltreeSource::default_configuration() const
     // Give a URL for the input file.
     cfg["filename"] = "";
 
+    // which event in the celltree file ... 
     cfg["EventNo"] = 0;
     
     // Give a list of frame tags.  These are translated to histogram
@@ -123,7 +124,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
      
      out = IFrame::pointer(sframe);
      
-    return true;
+     return true;
   }else{
     std::cerr << "Frame Number is out of boundary! " << std::endl;
     return false;
