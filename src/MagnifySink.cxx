@@ -89,7 +89,7 @@ string_set_t getset(const WireCell::Configuration& cfg)
     return ret;
 }
 
-// fixme: this little helper needs to move to FrameUtil
+// fixme: this little helper is also in FrameUtil
 ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
 {
     ITrace::vector ret;
@@ -97,7 +97,14 @@ ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
     for (size_t index : frame->tagged_traces(tag)) {
         ret.push_back(all_traces->at(index));
     }
-    return ret;
+    if (!ret.empty()) {
+        return ret;
+    }
+    auto ftags = frame->frame_tags();
+    if (std::find(ftags.begin(), ftags.end(), tag) == ftags.end()) {
+        return ret;
+    }
+    return *all_traces;		// must make copy
 }
 
 
@@ -241,6 +248,7 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
                     // 826M Jul 27 18:22 orig-bl-nf-fill-tbin.root
                     // 342M Jul 27 18:28 orig-bl-nf-setbincontent-tplus1.root
                     //hist->Fill(ch, tbin+itick+0.5, charges[itick]);
+		    // edit: it's due to saving errors.
 
                     hist->SetBinContent(cbin.bin(ch)+1, tbin+itick+1, charges[itick]);
                 }
