@@ -50,6 +50,7 @@ void Sio::MagnifySink::configure(const WireCell::Configuration& cfg)
     m_cfg = cfg;
 }
 
+
 WireCell::Configuration Sio::MagnifySink::default_configuration() const
 {
     Configuration cfg;
@@ -76,6 +77,13 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
     // first MagnifySink in a chain.  Use "UPDATE" for subsequent
     // sinks that add to the file.
     cfg["root_file_mode"] = "RECREATE";
+
+    // If runinfo is given it should be a JSON object and its values
+    // will be copied into the Trun tree.  If instead it is null AND
+    // an input file is given AND it contains a Trun tree, it will be
+    // copied to output.
+    cfg["runinfo"] = Json::nullValue;
+
     return cfg;
 }
 
@@ -153,6 +161,33 @@ std::vector<WireCell::Binning> collate_byplane(const ITrace::vector& traces, con
 
 void Sio::MagnifySink::do_shunt(TFile* output_tf)
 {
+    auto truncfg = m_cfg["runinfo"];
+    if (!truncfg.empty()) {
+	TTree *tree = new TTree("Trun","Trun");
+	tree->SetDirectory(output_tf);
+	std::cerr << "MagnifySink: making Trun:\n";
+
+	std::vector<int> ints;
+	std::vector<float> floats;
+
+	for (auto name : truncfg.getMemberNames()) {
+	    auto jval = truncfg[name];
+	    std::cerr << "\t" << name << " = " << jval << std::endl;
+	    if (jval.isInt()) {
+		ints.push_back(jval.asInt());
+		tree->Branch(name.c_str(), &ints.back(), (name+"/I").c_str());
+		continue;
+	    }
+	    if (jval.isDouble()) {
+		floats.push_back(jval.asFloat());
+		tree->Branch(name.c_str(), &floats.back(), (name+"/F").c_str());
+		continue;
+	    }
+	    std::cerr << "MagnifySink: warning: got unknown type for run info entry: "
+		      << "\"" << name << "\" = " << jval << std::endl;
+	}
+    }
+
     // Now deal with "shunting" input Magnify data to output.
     std::string ifname = m_cfg["input_filename"].asString();
     if (ifname.empty()) {
@@ -166,8 +201,12 @@ void Sio::MagnifySink::do_shunt(TFile* output_tf)
     }
     std::cerr << "MagnifySink: sneaking peaks into input file: " << ifname << std::endl;
 
+
     TFile *input_tf =  TFile::Open(ifname.c_str());
     for (auto name : toshunt) {
+	if (name == "Trun" && !truncfg.empty()) { // no double dipping
+	    continue;
+	}
 	TObject* obj = input_tf->Get(name.c_str());
 
 	if (!obj) {
