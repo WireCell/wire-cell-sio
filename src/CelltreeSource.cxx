@@ -96,7 +96,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
   std::unordered_map<IFrame::tag_t, IFrame::trace_list_t> tagged_traces;
   // celltree input now is raw data, no information about any noisy or bad channels
   // leave cmm empty.
-  WireCell::Waveform::ChannelMaskMap cmm = nullptr;
+  WireCell::Waveform::ChannelMaskMap cmm;
 
   int nticks=0;
   TH1F* signal = dynamic_cast<TH1F*>(esignal->At(0));
