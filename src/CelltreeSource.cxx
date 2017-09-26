@@ -25,7 +25,7 @@ Sio::CelltreeSource::~CelltreeSource()
 void Sio::CelltreeSource::configure(const WireCell::Configuration& cfg)
 {
     if (cfg["filename"].empty()) {
-        THROW(ValueError() << errmsg{"MagnifySource: must supply input \"filename\" configuration item."});
+        THROW(ValueError() << errmsg{"CelltreeSource: must supply input \"filename\" configuration item."});
     }
     m_cfg = cfg;
 }
@@ -36,11 +36,15 @@ WireCell::Configuration Sio::CelltreeSource::default_configuration() const
     // Give a URL for the input file.
     cfg["filename"] = "";
 
-    // which event in the celltree file ... 
+    // which event in the celltree file to be processed 
     cfg["EventNo"] = 0;
     
-    // Give a list of frame tags.  These are translated to histogram
-    cfg["frames"][0] = "orig";
+    // Give a list of frame/tree tags. 
+
+    // just raw waveform and no other choice at present
+    // Tree: Sim, Wf: raw_wf
+    cfg["frames"][0] = "raw_wf";
+
 
     return cfg;
 }
@@ -51,7 +55,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
 
   TFile* tfile = TFile::Open(url.c_str());
 
- 
+
   
   TTree *tree = (TTree*)tfile->Get("/Event/Sim");
   if (!tree) {
@@ -68,6 +72,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
   tree->SetBranchStatus("subRunNo",1);
   tree->SetBranchAddress("subRunNo", &subrun_no);
   
+
   std::vector<int> *channelid = new std::vector<int>;
   TClonesArray* esignal = new TClonesArray;
   
@@ -80,13 +85,18 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
   
   int siz = tree->GetEntry(frame_number);
 
-  // meed run number and subrunnumber
+  // need run number and subrunnumber
   int frame_ident = event_no;
   double frame_time=0;
 
+  // some output using eventNo, runNo, subRunNO, ...
+  std::cerr << "CelltreeSource: runNo "<<run_no<<", subrunNo "<<subrun_no<<", eventNo "<<event_no<<"\n";
+  
   ITrace::vector all_traces;
   std::unordered_map<IFrame::tag_t, IFrame::trace_list_t> tagged_traces;
-  WireCell::Waveform::ChannelMaskMap cmm;
+  // celltree input now is raw data, no information about any noisy or bad channels
+  // leave cmm empty.
+  WireCell::Waveform::ChannelMaskMap cmm = nullptr;
 
   int nticks=0;
   TH1F* signal = dynamic_cast<TH1F*>(esignal->At(0));
@@ -99,6 +109,8 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
     auto frametag = m_cfg["frames"][0].asString();
     int channel_number = 0;
     
+	std::cerr<<"CelltreeSource: loading "<<frametag<<" "<<nchannels<<" channels \n";
+
     // fill waveform ... 
      for (int ind=0; ind < nchannels; ++ind) {
 	TH1F* signal = dynamic_cast<TH1F*>(esignal->At(ind));
@@ -109,7 +121,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
 	 for (int itickbin = 0; itickbin != signal->GetNbinsX(); itickbin++){
 	   charges.push_back(signal->GetBinContent(itickbin+1));
 	 }
-	 
+
 	 const size_t index = all_traces.size();
 	 tagged_traces[frametag].push_back(index);
 	 
@@ -119,14 +131,14 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
 				   all_traces, 0.5*units::microsecond, cmm);
      for (auto const& it : tagged_traces) {
        sframe->tag_traces(it.first, it.second);
-       std::cerr << "MagnifySource: tag " << it.second.size() << " traces as: \"" << it.first << "\"\n";
+       std::cerr << "CelltreeSource: tag " << it.second.size() << " traces as: \"" << it.first << "\"\n";
      }
      
      out = IFrame::pointer(sframe);
      
      return true;
   }else{
-    std::cerr << "Frame Number is out of boundary! " << std::endl;
+    std::cerr << "Event Number is out of boundary! " << std::endl;
     return false;
   }
   

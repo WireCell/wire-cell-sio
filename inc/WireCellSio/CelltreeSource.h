@@ -1,4 +1,4 @@
-
+/* Celltree input for ( noise filter + signal processing ) */
 #ifndef WIRECELLSIO_CELLTREEFILESOURCE
 #define WIRECELLSIO_CELLTREEFILESOURCE
 
