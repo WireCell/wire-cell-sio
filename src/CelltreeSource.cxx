@@ -37,13 +37,13 @@ WireCell::Configuration Sio::CelltreeSource::default_configuration() const
     cfg["filename"] = "";
 
     // which event in the celltree file to be processed 
-    cfg["EventNo"] = 0;
+    cfg["EventNo"] = "0";
     
     // Give a list of frame/tree tags. 
 
     // just raw waveform and no other choice at present
     // Tree: Sim, Wf: raw_wf
-    cfg["frames"][0] = "raw_wf";
+    cfg["frames"][0] = "orig";
 
 
     return cfg;
@@ -81,15 +81,27 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
   tree->SetBranchStatus("raw_wf",1);
   tree->SetBranchAddress("raw_wf", &esignal);
 
-  int frame_number = m_cfg["EventNo"].asDouble();
-  
-  int siz = tree->GetEntry(frame_number);
+  int frame_number = std::stoi(m_cfg["EventNo"].asString());
+
+  // loop entry 
+  int siz = 0;
+  unsigned int entries = tree->GetEntries();
+  for(unsigned int ent = 0; ent<entries; ent++)
+  {
+      siz = tree->GetEntry(ent);
+      if(event_no == frame_number)
+      {
+          break;
+      }
+  }
+    
 
   // need run number and subrunnumber
   int frame_ident = event_no;
   double frame_time=0;
 
   // some output using eventNo, runNo, subRunNO, ...
+  std::cerr<<"CelltreeSource: frame "<<frame_number<<"\n";
   std::cerr << "CelltreeSource: runNo "<<run_no<<", subrunNo "<<subrun_no<<", eventNo "<<event_no<<"\n";
   
   ITrace::vector all_traces;
@@ -98,12 +110,8 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
   // leave cmm empty.
   WireCell::Waveform::ChannelMaskMap cmm;
 
-  int nticks=0;
-  TH1F* signal = dynamic_cast<TH1F*>(esignal->At(0));
-  nticks = signal->GetNbinsX();
   
-  
-  if (siz>0 && frame_number < siz){
+  if (siz>0 && frame_number == frame_ident){
     int nchannels = channelid->size();
 
     auto frametag = m_cfg["frames"][0].asString();
@@ -115,11 +123,16 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
      for (int ind=0; ind < nchannels; ++ind) {
 	TH1F* signal = dynamic_cast<TH1F*>(esignal->At(ind));
 	if (!signal) continue;
-	channel_number = ind;
+    channel_number = channelid->at(ind);
 
 	 ITrace::ChargeSequence charges;
-	 for (int itickbin = 0; itickbin != signal->GetNbinsX(); itickbin++){
-	   charges.push_back(signal->GetBinContent(itickbin+1));
+     int nticks = signal->GetNbinsX();
+     //std::cerr<<"CelltreeSource: tick "<<nticks<<"\n";
+     //nticks = 9600,  this could be an issue cause just 9594 have non-ZERO value around baseline
+     for (int itickbin = 0; itickbin != nticks; itickbin++){
+        if(signal->GetBinContent(itickbin+1)!=0) {
+            charges.push_back(signal->GetBinContent(itickbin+1));
+        }
 	 }
 
 	 const size_t index = all_traces.size();
@@ -138,7 +151,7 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
      
      return true;
   }else{
-    std::cerr << "Event Number is out of boundary! " << std::endl;
+    std::cerr << "CelltreeSource: Event Number is out of boundary! " << std::endl;
     return false;
   }
   
