@@ -163,30 +163,90 @@ void Sio::MagnifySink::do_shunt(TFile* output_tf)
 {
     auto truncfg = m_cfg["runinfo"];
     if (!truncfg.empty()) {
-	TTree *tree = new TTree("Trun","Trun");
-	tree->SetDirectory(output_tf);
-	std::cerr << "MagnifySink: making Trun:\n";
+	TTree *rtree = new TTree("Trun","Trun");
+	rtree->SetDirectory(output_tf);
+	std::cerr << "MagnifySink: making Tree RunInfo:\n";
 
 	std::vector<int> ints;
+    // issue to be fixed:
+    // the first element seems to be misconnected 
+    // to a wrong address in the rtree->Branch when rtree->Fill
+    // So kind of initilized to the vector could solve this issues
+    ints.push_back(0);
 	std::vector<float> floats;
-
-	for (auto name : truncfg.getMemberNames()) {
+    floats.push_back(0.0);
+    
+    int frame_number=0;
+    int celltree_input = 0;
+    for (auto name : truncfg.getMemberNames()) {
 	    auto jval = truncfg[name];
 	    std::cerr << "\t" << name << " = " << jval << std::endl;
+        if(name == "eventNo") frame_number = std::stoi(jval.asString());
+        if(name == "Celltree") {
+            celltree_input = jval.asInt();
+            continue;
+        }
 	    if (jval.isInt()) {
 		ints.push_back(jval.asInt());
-		tree->Branch(name.c_str(), &ints.back(), (name+"/I").c_str());
-		continue;
+		rtree->Branch(name.c_str(), &ints.back(), (name+"/I").c_str());
+        continue;
 	    }
 	    if (jval.isDouble()) {
 		floats.push_back(jval.asFloat());
-		tree->Branch(name.c_str(), &floats.back(), (name+"/F").c_str());
+		rtree->Branch(name.c_str(), &floats.back(), (name+"/F").c_str());
+		continue;
+	    }
+	    if (jval.isString()) {
+		ints.push_back(std::stoi(jval.asString()));
+		rtree->Branch(name.c_str(), &ints.back(), (name+"/I").c_str());
 		continue;
 	    }
 	    std::cerr << "MagnifySink: warning: got unknown type for run info entry: "
 		      << "\"" << name << "\" = " << jval << std::endl;
-	}
     }
+
+    if(celltree_input){
+    // runNo and subRunNo, perhaps other info in the future
+    TFile *input_runinfo = TFile::Open((m_cfg["input_filename"].asString()).c_str()); 
+    TTree *run = (TTree*)input_runinfo->Get("/Event/Sim");
+    if (!run) {
+        std::cerr<<"MagnifySink: runinfo: no tree: /Event/Sim in input file\n\n";
+    }
+    else{
+    run->SetBranchStatus("*",0);
+
+    int run_no, subrun_no, event_no;
+    run->SetBranchStatus("eventNo",1);
+    run->SetBranchAddress("eventNo" , &event_no);
+    run->SetBranchStatus("runNo",1);
+    run->SetBranchAddress("runNo"   , &run_no);
+    rtree->Branch("runNo",&run_no,"runNo/I");
+    run->SetBranchStatus("subRunNo",1);
+    run->SetBranchAddress("subRunNo", &subrun_no);
+    rtree->Branch("subRunNo",&subrun_no,"subRunNo/I");
+
+    unsigned int entries = run->GetEntries();
+    bool legalevt = false;
+    for(unsigned int ent = 0; ent<entries; ent++)
+    {
+        int siz = run->GetEntry(ent);
+        if(siz>0 && event_no == frame_number )
+        {
+            legalevt = true;
+            break;
+        }
+    }
+    if(!legalevt){
+        THROW(ValueError() << errmsg{"MagnifySink: event number out of range!"});
+    }   
+    delete input_runinfo;
+    input_runinfo = nullptr;
+    } // Event/Sim found
+    } // celltree input
+
+    rtree->Fill();
+    }
+
 
     // Now deal with "shunting" input Magnify data to output.
     std::string ifname = m_cfg["input_filename"].asString();
@@ -204,7 +264,7 @@ void Sio::MagnifySink::do_shunt(TFile* output_tf)
 
     TFile *input_tf =  TFile::Open(ifname.c_str());
     for (auto name : toshunt) {
-	if (name == "Trun" && !truncfg.empty()) { // no double dipping
+    if (name == "Trun" && !truncfg.empty()) { // no double dipping
 	    continue;
 	}
 	TObject* obj = input_tf->Get(name.c_str());
@@ -382,7 +442,7 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
             }
         }
     }
-
+    
     do_shunt(output_tf);
 
 
