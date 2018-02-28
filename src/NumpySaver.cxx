@@ -93,6 +93,12 @@ static depos_with_prior flatten_depos(std::vector<WireCell::IDepo::pointer> depo
 bool Sio::NumpySaver::operator()(const IFrame::pointer& inframe,
                                  IFrame::pointer& outframe)
 {
+    if (!inframe) {
+        std::cerr << "NumpySaver sees EOS on frame stream\n";
+        outframe = nullptr;
+        return true;
+    }
+
     outframe = inframe;         // pass through actual frame
 
     const std::string mode = "a";
@@ -203,9 +209,14 @@ bool Sio::NumpySaver::operator()(const IFrame::pointer& inframe,
 bool Sio::NumpySaver::operator()(const WireCell::IDepo::pointer& indepo,
                                  WireCell::IDepo::pointer& outdepo)
 {
-    outdepo = indepo;
-    if (indepo) {
-        m_depos.push_back(indepo);
+    if (!indepo) {
+        std::cerr << "NumpySaver sees EOS on depo stream\n";
+        outdepo = nullptr;
+        return true;
     }
+
+    outdepo = indepo;
+    m_depos.push_back(indepo);
+
     return true;
 }
