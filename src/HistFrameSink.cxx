@@ -57,6 +57,11 @@ void Sio::HistFrameSink::configure(const WireCell::Configuration& cfg)
 
 bool Sio::HistFrameSink::operator()(const IFrame::pointer& frame)
 {
+    if (!frame) {
+        cerr << "Sio::HistFrameSink: no frame\n";
+        return true;
+    }
+
     std::string fname = Form(m_filepat.c_str(), frame->ident());
     TFile* file = TFile::Open(fname.c_str(), "recreate");
     
