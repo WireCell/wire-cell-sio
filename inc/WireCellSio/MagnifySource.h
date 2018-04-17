@@ -1,4 +1,9 @@
-/** A "Magnify" file is one used for viewing in the Magnify display. */
+/** A "Magnify" file is one used for viewing in the Magnify display. 
+ *
+ * The file can only hold one frame so this source may be called at
+ * most twice before it starts returning false.  First time will give
+ * a frame, second time will give an EOS.
+ */
 
 #ifndef WIRECELLSIO_MAGNIFYFILESOURCE
 #define WIRECELLSIO_MAGNIFYFILESOURCE
@@ -23,7 +28,7 @@ namespace WireCell {
             virtual void configure(const WireCell::Configuration& config);
         private:
             Configuration m_cfg;
-
+            int m_calls;
         };
     }
 }

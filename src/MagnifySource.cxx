@@ -14,6 +14,7 @@ WIRECELL_FACTORY(MagnifySource, WireCell::Sio::MagnifySource, WireCell::IFrameSo
 using namespace WireCell;
 
 Sio::MagnifySource::MagnifySource()
+    : m_calls(0)
 {
 }
 
@@ -51,6 +52,19 @@ WireCell::Configuration Sio::MagnifySource::default_configuration() const
 
 bool Sio::MagnifySource::operator()(IFrame::pointer& out)
 {
+    out = nullptr;
+    ++m_calls;
+    std::cerr << "MagnifySource: called " << m_calls << " times\n";
+    if (m_calls > 2) {
+        std::cerr << "MagnifySource: past EOS\n";
+        return false;
+    }
+    if (m_calls > 1) {
+        std::cerr << "MagnifySource: EOS\n";
+        return true;            // this is to send out EOS
+    }
+
+
     std::string url = m_cfg["filename"].asString();
 
     TFile* tfile = TFile::Open(url.c_str());

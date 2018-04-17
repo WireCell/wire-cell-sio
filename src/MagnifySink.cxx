@@ -302,6 +302,7 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
     out_frame = frame;
     if (!frame) {
         // eos 
+        std::cerr << "MagnifySink: EOS\n";
         return true;
     }
 
