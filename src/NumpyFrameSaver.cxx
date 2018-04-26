@@ -107,6 +107,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
             // fixme: may want to give user some config over tbin range to save.
             const size_t ncols = tbinmm.second-tbinmm.first;
             const size_t nrows = std::distance(chbeg, chend);
+            std::cerr << "NumpyFrameSaver: ncols=" << ncols << " nrows=" <<nrows <<"\n";
             Array::array_xxf arr = Array::array_xxf::Zero(nrows, ncols) + baseline;
             FrameTools::fill(arr, traces, channels.begin(), chend, tbinmm.first);
             arr = arr * scale + offset;
