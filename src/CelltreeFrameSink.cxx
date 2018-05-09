@@ -66,6 +66,11 @@ void Sio::CelltreeFrameSink::configure(const WireCell::Configuration& cfg)
 
 bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
 {
+    if(!frame){
+        cerr << "Sio: HistFrameSink: no frame\n";
+        return true;
+    }
+
     std::string fname = Form(m_filepat.c_str(), frame->ident());
     
     // [HY] Simulation output celltree
@@ -77,7 +82,8 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
     Int_t eventNo = 0;
     Int_t raw_nChannel = 8256;
     std::vector<int> *raw_channelId = new std::vector<int>;
-    TClonesArray *sim_wf = new TClonesArray("TH1I");
+    TClonesArray *sim_wf = new TClonesArray("TH1F");
+    //TClonesArray *sim_wf = new TClonesArray("TH1I");
     TH1::AddDirectory(kFALSE);
     // Brances set
     Sim->Branch("runNo", &runNo, "runNo/I");
@@ -122,7 +128,8 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
         //std::cout<<"channel number: "<<ch<<std::endl;
         raw_channelId->push_back(ch);
         // fill raw_wf
-        TH1I *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1I("", "",  nsamples, 0,  nsamples);
+        TH1F *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1F("", "",  nsamples, 0,  nsamples);
+        //TH1I *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1I("", "",  nsamples, 0,  nsamples);
         auto& wave = trace->charge();
         int nbins = wave.size();
         //std::cout<<"waveform size: "<<nbins<<std::endl;
@@ -152,7 +159,7 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
     /** [DEBUG]
      * Histogram copy of CelltreeFrameSink waveforms (TClonesArray)
      * easy used for validation against HistoFrameSink output
-    const double t0 = frame->time();
+     const double t0 = frame->time();
     TH2F* hist[3]; // not auto, need to know wpident list first of all
     int tbng[3];
     int tlen[3];
@@ -204,6 +211,7 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
     hist[2]->Write();
     /// end
     */
+
    
 
     TFile* file = TFile::Open(fname.c_str(), "recreate");
