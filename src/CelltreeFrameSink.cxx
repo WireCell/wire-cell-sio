@@ -67,7 +67,7 @@ void Sio::CelltreeFrameSink::configure(const WireCell::Configuration& cfg)
 bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
 {
     if(!frame){
-        cerr << "Sio: HistFrameSink: no frame\n";
+        cerr << "Sio: CelltreeFrameSink: no frame\n";
         return true;
     }
 
