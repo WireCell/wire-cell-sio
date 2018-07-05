@@ -45,7 +45,7 @@ WireCell::Configuration Sio::NumpyFrameSaver::default_configuration() const
     // casting to dtype.
     cfg["offset"] = 0.0;
 
-    // The frame tags to consider for saving
+    // The frame tags to consider for saving.  If null or empty then all traces are used.
     cfg["frame_tags"] = Json::arrayValue;
     // The summary tags to consider for saving
     //cfg["summary_tags"] = Json::arrayValue;    
@@ -75,7 +75,8 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
         outframe = nullptr;
         return true;
     }
-
+    std::cerr << "NumpyFrameSaver see frame " << inframe->ident() << " with " << inframe->traces()->size() << " traces\n";
+    
     outframe = inframe;         // pass through actual frame
 
     const std::string mode = "a";
@@ -91,56 +92,59 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
     // one row is one channel, one column is a tick.
     // Numpy saves reversed dimensions: {ncols, nrows} aka {ntick, nchan} dimensions.
 
-    if (! m_cfg["frame_tags"].isNull()) {
-        for (auto jtag : m_cfg["frame_tags"]) {
-            const std::string tag = jtag.asString();
-            auto traces = FrameTools::tagged_traces(inframe, tag);
-            if (traces.empty()) {
-                continue;
+
+    if (m_cfg["frame_tags"].isNull() or m_cfg["frame_tags"].empty()) {
+        m_cfg["frame_tags"][0] = "";
+    }
+
+    for (auto jtag : m_cfg["frame_tags"]) {
+        const std::string tag = jtag.asString();
+        auto traces = FrameTools::tagged_traces(inframe, tag);
+        std::cerr << "NumpyFrameSaver: save " << traces.size() << " tagged as \"" << tag << "\"\n";
+        if (traces.empty()) {
+            std::cerr << "NumpyFrameSaver: no traces for tag: \"" << tag << "\"\n";
+            continue;
+        }
+        auto channels = FrameTools::channels(traces);
+        std::sort(channels.begin(), channels.end());
+        auto chbeg = channels.begin();
+        auto chend = std::unique(chbeg, channels.end());
+        auto tbinmm = FrameTools::tbin_range(traces);
+
+        // fixme: may want to give user some config over tbin range to save.
+        const size_t ncols = tbinmm.second-tbinmm.first;
+        const size_t nrows = std::distance(chbeg, chend);
+        std::cerr << "NumpyFrameSaver: ncols=" << ncols << " nrows=" <<nrows <<"\n";
+        Array::array_xxf arr = Array::array_xxf::Zero(nrows, ncols) + baseline;
+        FrameTools::fill(arr, traces, channels.begin(), chend, tbinmm.first);
+        arr = arr * scale + offset;
+
+        {                   // the 2D frame array
+            const std::string aname = String::format("frame_%s_%d", tag.c_str(), m_save_count);
+            if (digitize) {
+                Array::array_xxs sarr = arr.cast<short>();
+                const short* sdata = sarr.data();
+                cnpy::npz_save(fname, aname, sdata, {ncols, nrows}, mode);
             }
-            auto channels = FrameTools::channels(traces);
-            std::sort(channels.begin(), channels.end());
-            auto chbeg = channels.begin();
-            auto chend = std::unique(chbeg, channels.end());
-            auto tbinmm = FrameTools::tbin_range(traces);
-
-            // fixme: may want to give user some config over tbin range to save.
-            const size_t ncols = tbinmm.second-tbinmm.first;
-            const size_t nrows = std::distance(chbeg, chend);
-            std::cerr << "NumpyFrameSaver: ncols=" << ncols << " nrows=" <<nrows <<"\n";
-            Array::array_xxf arr = Array::array_xxf::Zero(nrows, ncols) + baseline;
-            FrameTools::fill(arr, traces, channels.begin(), chend, tbinmm.first);
-            arr = arr * scale + offset;
-
-            {                   // the 2D frame array
-                const std::string aname = String::format("frame_%s_%d", tag.c_str(), m_save_count);
-                if (digitize) {
-                    Array::array_xxs sarr = arr.cast<short>();
-                    const short* sdata = sarr.data();
-                    cnpy::npz_save(fname, aname, sdata, {ncols, nrows}, mode);
-                }
-                else {
-                    cnpy::npz_save(fname, aname, arr.data(), {ncols, nrows}, mode);
-                }
-                std::cerr << "Saved " << aname << " with " << nrows << " channels "
-                          << ncols << " ticks @t=" << inframe->time() / units::ms << "ms\n";
-
+            else {
+                cnpy::npz_save(fname, aname, arr.data(), {ncols, nrows}, mode);
             }
-
-            {                   // the channel array
-                const std::string aname = String::format("channels_%s_%d", tag.c_str(), m_save_count);
-                cnpy::npz_save(fname, aname, channels.data(), {nrows}, mode);
-            }
-
-            {                   // the tick array
-                const std::string aname = String::format("tickinfo_%s_%d", tag.c_str(), m_save_count);
-                const std::vector<double> tickinfo{inframe->time(), inframe->tick(), (double)tbinmm.first};
-                cnpy::npz_save(fname, aname, tickinfo.data(), {3}, mode);
-            }
+            std::cerr << "Saved " << aname << " with " << nrows << " channels "
+                      << ncols << " ticks @t=" << inframe->time() / units::ms << "ms\n";
 
         }
 
-    } // if any frame tags to save
+        {                   // the channel array
+            const std::string aname = String::format("channels_%s_%d", tag.c_str(), m_save_count);
+            cnpy::npz_save(fname, aname, channels.data(), {nrows}, mode);
+        }
+
+        {                   // the tick array
+            const std::string aname = String::format("tickinfo_%s_%d", tag.c_str(), m_save_count);
+            const std::vector<double> tickinfo{inframe->time(), inframe->tick(), (double)tbinmm.first};
+            cnpy::npz_save(fname, aname, tickinfo.data(), {3}, mode);
+        }
+    }
 
     ++m_save_count;
     return true;
