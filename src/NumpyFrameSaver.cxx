@@ -75,7 +75,6 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
         outframe = nullptr;
         return true;
     }
-    std::cerr << "NumpyFrameSaver see frame " << inframe->ident() << " with " << inframe->traces()->size() << " traces\n";
     
     outframe = inframe;         // pass through actual frame
 
@@ -96,6 +95,23 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
     if (m_cfg["frame_tags"].isNull() or m_cfg["frame_tags"].empty()) {
         m_cfg["frame_tags"][0] = "";
     }
+
+
+    std::cerr << "NumpyFrameSaver see frame #" << inframe->ident()
+              << " with " << inframe->traces()->size() << " traces with frame tags:";
+    for (auto t : inframe->frame_tags()) {
+        std::cerr << " \"" << t << "\"";
+    }
+    std::cerr << " and trace tags:";
+    for (auto t : inframe->trace_tags()) {
+        std::cerr << " \"" << t << "\"";
+    }
+    std::cerr << " looking for tags:";
+    for (auto jt: m_cfg["frame_tags"]) {
+        std::cerr << " \"" << jt.asString() << "\"";
+    }
+    std::cerr << std::endl;
+
 
     for (auto jtag : m_cfg["frame_tags"]) {
         const std::string tag = jtag.asString();
@@ -130,7 +146,8 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
                 cnpy::npz_save(fname, aname, arr.data(), {ncols, nrows}, mode);
             }
             std::cerr << "Saved " << aname << " with " << nrows << " channels "
-                      << ncols << " ticks @t=" << inframe->time() / units::ms << "ms\n";
+                      << ncols << " ticks @t=" << inframe->time() / units::ms << "ms, "
+                      << "qtot=" << arr.sum() << "\n";
 
         }
 

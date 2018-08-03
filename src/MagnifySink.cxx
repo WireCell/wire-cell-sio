@@ -316,7 +316,9 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
         ITrace::vector traces_byplane[3], traces = get_tagged_traces(frame, tag);
         if (traces.empty()) {
             std::cerr << "MagnifySink: no tagged traces for \"" << tag << "\"\n";
-            THROW(ValueError() << errmsg{"MagnifySink: no tagged traces"});
+            // THROW(ValueError() << errmsg{"MagnifySink: no tagged traces"});
+            // let's not be so heavy handed.
+            continue;
         }
 
         std::cerr << "MagnifySink: tag: \"" << tag << "\" with " << traces.size() << " traces\n";
