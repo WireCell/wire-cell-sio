@@ -340,7 +340,7 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
             hist->SetDirectory(output_tf);
             
             for (auto trace : traces_byplane[iplane]) {
-                const int tbin = trace->tbin();
+                const int tbin1 = trace->tbin();
                 const int ch = trace->channel();
                 auto const& charges = trace->charge();
                 for (size_t itick=0; itick < charges.size(); ++itick) {
@@ -352,7 +352,9 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
                     //hist->Fill(ch, tbin+itick+0.5, charges[itick]);
 		    // edit: it's due to saving errors.
 
-                    hist->SetBinContent(cbin.bin(ch)+1, tbin+itick+1, charges[itick]);
+		    // std::cout << tbin1 << " " << tbin.min() << std::endl;
+		    
+                    hist->SetBinContent(cbin.bin(ch)+1, tbin1-tbin.min()+itick+1, charges[itick]);
                 }
             }
         }
