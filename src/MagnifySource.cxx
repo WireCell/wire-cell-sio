@@ -46,6 +46,7 @@ WireCell::Configuration Sio::MagnifySource::default_configuration() const
 
     // A list of pairs mapping a cmm key name to a ttree name.
     cfg["cmmtree"] = Json::arrayValue;
+
     return cfg;
 }
 
@@ -73,16 +74,17 @@ bool Sio::MagnifySource::operator()(IFrame::pointer& out)
     int nticks=0;
     double frame_time=0;
     {
-        TTree *trun = (TTree*)tfile->Get("Trun");
-        if (!trun) {
-            THROW(IOError() << errmsg{"No tree: Trun in input file"});
-        }
-
-        // runNo, subRunNo??
-        trun->SetBranchAddress("eventNo", &frame_ident);
-        trun->SetBranchAddress("total_time_bin", &nticks);
-        //trun->SetBranchAddress("time_offset", &frame_time); use this??
-        trun->GetEntry(0);
+            TTree *trun = (TTree*)tfile->Get("Trun");
+            if (!trun) {
+                std::cerr << "No tree: Trun in input file \n";
+            }
+            else{
+            // runNo, subRunNo??
+            trun->SetBranchAddress("eventNo", &frame_ident);
+            trun->SetBranchAddress("total_time_bin", &nticks);
+            //trun->SetBranchAddress("time_offset", &frame_time); use this??
+            trun->GetEntry(0);
+            }
     }
     std::cerr << "MagnifySource: frame ident="<<frame_ident<<", time=0, nticks="<<nticks<<"\n";
 
