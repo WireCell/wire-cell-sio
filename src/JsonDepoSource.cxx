@@ -8,7 +8,8 @@
 #include "WireCellUtil/Point.h"
 #include "WireCellUtil/Persist.h"
 
-WIRECELL_FACTORY(JsonDepoSource, WireCell::Sio::JsonDepoSource, WireCell::IDepoSource, WireCell::IConfigurable);
+WIRECELL_FACTORY(JsonDepoSource, WireCell::Sio::JsonDepoSource,
+                 WireCell::IDepoSource, WireCell::IConfigurable)
 
 #include <iostream>
 #include <string>

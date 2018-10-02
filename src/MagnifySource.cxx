@@ -9,7 +9,8 @@
 #include "TH2.h"
 
 
-WIRECELL_FACTORY(MagnifySource, WireCell::Sio::MagnifySource, WireCell::IFrameSource, WireCell::IConfigurable);
+WIRECELL_FACTORY(MagnifySource, WireCell::Sio::MagnifySource,
+                 WireCell::IFrameSource, WireCell::IConfigurable)
 
 using namespace WireCell;
 

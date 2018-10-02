@@ -15,7 +15,8 @@
 #include <algorithm>
 #include <unordered_map>
 
-WIRECELL_FACTORY(CelltreeFrameSink, WireCell::Sio::CelltreeFrameSink, WireCell::IFrameSink, WireCell::IConfigurable);
+WIRECELL_FACTORY(CelltreeFrameSink, WireCell::Sio::CelltreeFrameSink,
+                 WireCell::IFrameSink, WireCell::IConfigurable)
 
 
 using namespace std;

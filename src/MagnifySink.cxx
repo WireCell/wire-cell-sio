@@ -12,7 +12,8 @@
 #include <vector>
 #include <string>
 
-WIRECELL_FACTORY(MagnifySink, WireCell::Sio::MagnifySink, WireCell::IFrameFilter, WireCell::IConfigurable);
+WIRECELL_FACTORY(MagnifySink, WireCell::Sio::MagnifySink,
+                 WireCell::IFrameFilter, WireCell::IConfigurable)
 
 using namespace WireCell;
 

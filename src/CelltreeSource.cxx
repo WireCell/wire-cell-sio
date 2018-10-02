@@ -10,7 +10,8 @@
 #include "TH1F.h"
 
 
-WIRECELL_FACTORY(CelltreeSource, WireCell::Sio::CelltreeSource, WireCell::IFrameSource, WireCell::IConfigurable);
+WIRECELL_FACTORY(CelltreeSource, WireCell::Sio::CelltreeSource,
+                 WireCell::IFrameSource, WireCell::IConfigurable)
 
 using namespace WireCell;
 
