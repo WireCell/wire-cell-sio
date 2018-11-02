@@ -141,12 +141,18 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         std::cerr << "CelltreeFrameSink: tag: \"" << tag << "\" with " << traces.size() << " traces\n";
         
         std::vector<int> *raw_channelId = new std::vector<int>;
-        const std::string channelIdname = Form("%s_channelId", tag.c_str());
+        std::string channelIdname;
+        if ( !tag.compare("gauss")) channelIdname = "calibGaussian_channelId"; 
+        if ( !tag.compare("wiener")) channelIdname = "calibWiener_channelId"; 
+        //const std::string channelIdname = Form("%s_channelId", tag.c_str());
         TBranch *bchannelId = Sim->Branch(channelIdname.c_str(), &raw_channelId);
         
         TClonesArray *sim_wf = new TClonesArray("TH1F");
         TH1::AddDirectory(kFALSE);
-        const std::string wfname = Form("%s_wf", tag.c_str());
+        std::string wfname;
+        if ( !tag.compare("gauss")) wfname = "calibGaussian_wf"; 
+        if ( !tag.compare("wiener")) wfname = "calibWiener_wf"; 
+        //const std::string wfname = Form("%s_wf", tag.c_str());
         TBranch *bwf = Sim->Branch(wfname.c_str(), &sim_wf, 256000, 0);
 
         int nsamples = m_nsamples;
