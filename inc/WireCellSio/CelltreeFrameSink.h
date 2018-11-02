@@ -7,7 +7,7 @@
 #ifndef WIRECELLSIO_CELLTREEFRAMSINK
 #define WIRECELLSIO_CELLTREEFRAMSINK
 
-#include "WireCellIface/IFrameSink.h"
+#include "WireCellIface/IFrameFilter.h"
 #include "WireCellIface/IConfigurable.h"
 #include "WireCellIface/IAnodePlane.h"
 
@@ -16,27 +16,23 @@
 namespace WireCell {
     namespace Sio {
 
-        class CelltreeFrameSink : public IFrameSink , public IConfigurable {
+        class CelltreeFrameSink : public IFrameFilter , public IConfigurable {
         public:
             CelltreeFrameSink();
             virtual ~CelltreeFrameSink();
 
 
             /// Frame sink interface
-            virtual bool operator()(const IFrame::pointer& frame);
+            virtual bool operator()(const IFrame::pointer& frame, IFrame::pointer& out_frame);
             
             /// Configurable interface
             virtual void configure(const WireCell::Configuration& config);
             virtual WireCell::Configuration default_configuration() const;
 
         private:
-            
-            std::string m_filepat, m_anode_tn;
+            Configuration m_cfg;
             IAnodePlane::pointer m_anode;
-            double m_units;
-            double m_readout;
-
-
+            int m_nsamples;
         };
 
     }

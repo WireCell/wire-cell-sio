@@ -16,17 +16,13 @@
 #include <unordered_map>
 
 WIRECELL_FACTORY(CelltreeFrameSink, WireCell::Sio::CelltreeFrameSink,
-                 WireCell::IFrameSink, WireCell::IConfigurable)
+                 WireCell::IFrameFilter, WireCell::IConfigurable)
 
 
 using namespace std;
 using namespace WireCell;
 
 Sio::CelltreeFrameSink::CelltreeFrameSink()
-    : m_filepat("celltreeframe-%02d.root")
-    , m_anode_tn("AnodePlane")
-    , m_units(1.0)
-    , m_readout(5.0*units::ms)
 {
 }
 
@@ -38,192 +34,239 @@ Sio::CelltreeFrameSink::~CelltreeFrameSink()
 WireCell::Configuration Sio::CelltreeFrameSink::default_configuration() const
 {
     Configuration cfg;
-    cfg["filename"] = m_filepat;
-    cfg["anode"] = m_anode_tn;
-    cfg["units"] = units::uV;
-    cfg["readout_time"] = m_readout;
+   
+    cfg["anode"] = "AnodePlane";
+    cfg["output_filename"] = "";
+    cfg["frames"] = Json::arrayValue;
+    cfg["cmmtree"] = Json::arrayValue;
+    cfg["root_file_mode"] = "RECREATE";
+    cfg["nsamples"] = 0; 
+
     return cfg;
 }
 
 void Sio::CelltreeFrameSink::configure(const WireCell::Configuration& cfg)
 {
-    m_filepat = get<std::string>(cfg, "filename", m_filepat);
-    m_units = get<double>(cfg, "units", m_units);
-    m_readout = get<double>(cfg, "readout_time", m_readout);
-    m_anode_tn = get<std::string>(cfg, "anode", m_anode_tn);
-    m_anode = Factory::lookup_tn<IAnodePlane>(m_anode_tn);
+    std::string fn;
+
+    fn = cfg["output_filename"].asString();
+    if (fn.empty()) {
+        THROW(ValueError() << errmsg{"Must provide output filename to CelltreeFrameSink"});
+    }
+    
+    auto anode_tn = get<std::string>(cfg, "anode", "AnodePlane");
+    m_anode = Factory::lookup_tn<IAnodePlane>(anode_tn);
     if (!m_anode) {
-        cerr << "Sio::CelltreeFrameSink: failed to get anode: \"" << m_anode_tn << "\"\n";
+        cerr << "Sio::CelltreeFrameSink: failed to get anode: \"" << anode_tn << "\"\n";
         return;
     }
-    cerr << "Sio::CelltreeFrameSink: configured with: "
-         << "file:" << m_filepat << ", "
-         << "units:" << m_units << ", "
-         << "anode:" << m_anode_tn << ", "
-         << "readout: "<< m_readout/units::ms <<endl;
+   
+    m_nsamples = get<int>(cfg, "nsamples", 0);
+    if(m_nsamples == 0) {
+        THROW(ValueError() << errmsg{"nsamples has to be configured"});
+    }
+
+    m_cfg = cfg;
 }
 
 
-
-bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame)
+typedef std::unordered_set<std::string> string_set_tc;
+string_set_tc cgetset(const WireCell::Configuration& cfg)
 {
+    string_set_tc ret;
+    for (auto jone : cfg) {
+        ret.insert(jone.asString());
+    }
+    return ret;
+}
+
+ITrace::vector cget_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
+{
+    ITrace::vector ret;
+    auto const& all_traces = frame->traces();
+    for (size_t index : frame->tagged_traces(tag)) {
+        ret.push_back(all_traces->at(index));
+    }
+    if (!ret.empty()) {
+        return ret;
+    }
+    auto ftags = frame->frame_tags();
+    if (std::find(ftags.begin(), ftags.end(), tag) == ftags.end()) {
+        return ret;
+    }
+    return *all_traces;		// must make copy
+}
+
+
+bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::pointer& out_frame)
+{
+    out_frame = frame;
     if(!frame){
-        cerr << "Sio: CelltreeFrameSink: no frame\n";
+        std::cerr << "CelltreeFrameSink: EOS\n";
         return true;
     }
 
-    std::string fname = Form(m_filepat.c_str(), frame->ident());
-    
+    const std::string ofname = m_cfg["output_filename"].asString();
+    const std::string mode = m_cfg["root_file_mode"].asString();
+    std::cerr << "CelltreeFrameSink: opening for output: " << ofname << " with \"" << mode << "\"\n";
+    TFile* output_tf = TFile::Open(ofname.c_str(), mode.c_str());
+    if(!output_tf->GetDirectory("Event")) output_tf->mkdir("Event");
+    output_tf->cd("Event");
+
     // [HY] Simulation output celltree
     // Sim Tree
-    TTree *Sim = new TTree("Sim","Wire-cell toolkit simulation output");
-    // Branches init
-    Int_t runNo = 0; 
-    Int_t subRunNo = 0;
-    Int_t eventNo = 0;
-    Int_t raw_nChannel = 8256;
-    std::vector<int> *raw_channelId = new std::vector<int>;
-    TClonesArray *sim_wf = new TClonesArray("TH1F");
-    //TClonesArray *sim_wf = new TClonesArray("TH1I");
-    TH1::AddDirectory(kFALSE);
-    // Brances set
-    Sim->Branch("runNo", &runNo, "runNo/I");
-    Sim->Branch("subRunNo", &subRunNo, "subRunNo/I");
-    Sim->Branch("eventNo", &eventNo, "eventNo/I");
-    Sim->Branch("raw_nChannel", &raw_nChannel, "raw_nChannel/I");
+    TTree *Sim;
+    Sim = (TTree*)output_tf->Get("Event/Sim");
+    if(!Sim) {
+        Sim = new TTree("Sim","Wire-cell toolkit simulation output");
+        Int_t runNo = 0; 
+        Int_t subRunNo = 0;
+        Int_t eventNo = 0;
+        Sim->Branch("runNo", &runNo, "runNo/I");
+        Sim->Branch("subRunNo", &subRunNo, "subRunNo/I");
+        Sim->Branch("eventNo", &eventNo, "eventNo/I");
+        Sim->Fill();
+    }
+  
+    // trace frames
+    for (auto tag : cgetset(m_cfg["frames"])){
+       
+        //string tag = "gauss";
+        ITrace::vector traces = cget_tagged_traces(frame, tag);
+        if (traces.empty()) {
+            std::cerr << "CelltreeFrameSink: no tagged traces for\"" << tag << "\"\n";
+            continue;
+        }
 
-    Sim->Branch("raw_channelId", &raw_channelId);
-    Sim->Branch("raw_wf", &sim_wf, 256000, 0);
-    // for sim_wf fill one by one
-    int sim_wf_ind = 0;  
+        std::cerr << "CelltreeFrameSink: tag: \"" << tag << "\" with " << traces.size() << " traces\n";
+        
+        std::vector<int> *raw_channelId = new std::vector<int>;
+        const std::string channelIdname = Form("%s_channelId", tag.c_str());
+        TBranch *bchannelId = Sim->Branch(channelIdname.c_str(), &raw_channelId);
+        
+        TClonesArray *sim_wf = new TClonesArray("TH1F");
+        TH1::AddDirectory(kFALSE);
+        const std::string wfname = Form("%s_wf", tag.c_str());
+        TBranch *bwf = Sim->Branch(wfname.c_str(), &sim_wf, 256000, 0);
 
-    /* // fill channel: if all channels need to be filled */
-    /* auto& chanchan = m_anode->channels(); */
-    /* raw_nChannel = chanchan.size(); */
-    /* std::cout<<"nChannel: "<<raw_nChannel<<std::endl; */
-    /* for(int i=0; i<raw_nChannel; i++){ */
-    /*     raw_channelId->push_back(chanchan.At(i)); */   
-    /*     std::cout<<"channelId: "<<chanchan.At(i)<<std::endl; */
-    /* } */
-
-
-    typedef std::tuple< ITrace::vector, std::vector<int>, std::vector<int> > tct_tuple;
-    std::unordered_map<int, tct_tuple> perplane; 
-
-    const double tick = frame->tick();
-    //std::cout<<"tick: "<<tick/units::us<<std::endl;
-    const int nsamples = m_readout/tick;
-    //std::cout<<"nsamples: "<<nsamples<<std::endl;
-
-
-    /** [DEBUG] storage for searching min/max channel and tbin
-    typedef std::tuple< std::vector<int>, std::vector<int> > tc_tuple;
-    std::unordered_map<int, tc_tuple> planes;
-     */
-
-
-    // collate traces into per plane and also calculate bounds 
-    ITrace::shared_vector traces = frame->traces();
-    for (ITrace::pointer trace : *traces) {
+        int nsamples = m_nsamples;
+        //std::cout<<"nsamples: "<<m_nsamples<<std::endl;
+        
+        int sim_wf_ind = 0;
+ 
+    for (auto trace : traces) {
         int ch = trace->channel();
         //std::cout<<"channel number: "<<ch<<std::endl;
         raw_channelId->push_back(ch);
         // fill raw_wf
         TH1F *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1F("", "",  nsamples, 0,  nsamples);
         //TH1I *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1I("", "",  nsamples, 0,  nsamples);
-        auto& wave = trace->charge();
-        int nbins = wave.size();
+        auto const& wave = trace->charge();
+        const int nbins = wave.size();
         //std::cout<<"waveform size: "<<nbins<<std::endl;
-        int tmin = trace->tbin();
+        const int tmin = trace->tbin();
         //std::cout<<"tmin: "<<tmin<<std::endl;
         for(Int_t i=0; i<nbins; i++){
             if(tmin+i+1<=nsamples){ 
-            htemp->SetBinContent(tmin+i+1, (int)wave[i]/m_units);
+            htemp->SetBinContent(tmin+i+1, wave[i]);
             }
         } 
         sim_wf_ind ++;
-
-        /** [DEBUG]
-        auto& tc = planes[m_anode->resolve(ch).ident()];
-        get<0>(tc).push_back(ch);
-        get<1>(tc).push_back(tmin);
-        get<1>(tc).push_back(tmin+nbins);
-          */
-
-
-    }
-    raw_nChannel = sim_wf_ind;
-    //cout<<"nChannel: "<<raw_nChannel<<std::endl;
-
-    Sim->Fill();
-
-    /** [DEBUG]
-     * Histogram copy of CelltreeFrameSink waveforms (TClonesArray)
-     * easy used for validation against HistoFrameSink output
-     const double t0 = frame->time();
-    TH2F* hist[3]; // not auto, need to know wpident list first of all
-    int tbng[3];
-    int tlen[3];
-    for (auto& thisplane : planes) {
-        int wpident = thisplane.first;
-        auto& tc = thisplane.second;
-        auto& chans = get<0>(tc);
-        auto chmm = std::minmax_element(chans.begin(), chans.end());
-        auto& tbins = get<1>(tc);
-        auto tbmm = std::minmax_element(tbins.begin(), tbins.end());
-
-
-        const double tmin = t0 + tick*(*tbmm.first);
-        const double tmax = t0 + tick*(*tbmm.second);
-        const int ntbins = (*tbmm.second)-(*tbmm.first);
-
-        const int chmin = round(*chmm.first);
-        const int chmax = round(*chmm.second + 1);
-        const int nchbins = chmax - chmin;
-
-        int hind = wpident/2;
-        tbng[hind] = (*tbmm.first);
-        tlen[hind] = ntbins;
-        hist[hind] = new TH2F(Form("plane%d", wpident),
-                Form("Plane %d", wpident),
-                ntbins, tmin/units::us, tmax/units::us,
-                nchbins, chmin, chmax);
-        hist[hind]->SetXTitle("time [us]");
-        hist[hind]->SetYTitle("channel");
-    }
-
-    for(int ich=0; ich<raw_nChannel; ich++)
-    {
-        int chh = raw_channelId->at(ich);
-        TH1F* h = dynamic_cast<TH1F*>(sim_wf->At(ich));
-        int pind = m_anode->resolve(chh).ident()/2;
-        //cout<<"Plane ID: "<<pind<<endl;
-
-        for(int it = 0; it<tlen[pind]; it++){
-            int abstind = tbng[pind]+it;
-            hist[pind]->Fill((t0+(tick)*(abstind+0.5))/units::us, chh+0.5, h->GetBinContent(abstind+1)/m_units);
-        }
-    }
-
-    
-
-    hist[0]->Write();
-    hist[1]->Write();
-    hist[2]->Write();
-    /// end
-    */
-
+    } // traces
    
+    cout<<"channelId size: " << raw_channelId->size() << "\n";
+    bchannelId->Fill();
+    bwf->Fill();
+    } // frames
+ 
 
-    TFile* file = TFile::Open(fname.c_str(), "recreate");
-    TDirectory *event = file->mkdir("Event");
-    event->cd();
-    Sim->Write();
+    // trace summaries
+    // currently only one option "threshold"
+    for (auto tag : cgetset(m_cfg["summaries"])) {
+        auto traces = cget_tagged_traces(frame, tag);
+        if (traces.empty()) {
+            std::cerr << "CelltreeFrameSink: warning: no traces tagged with \"" << tag << "\", skipping summary\n";
+            continue;
+        }
+        auto const& summary = frame->trace_summary(tag);
+        if (summary.empty()) {
+            std::cerr << "CelltreeFrameSink: warning: empty summary tagged with \"" << tag << "\", skipping summary\n";
+            continue;
+        }
+            
+        std::cerr << "CelltreeFrameSink: summary tag: \"" << tag << "\" with " << traces.size() << " traces\n";
+        
+        // vector<double> channelThreshold index <--> channelId
+        std::vector<double> *channelThreshold = new std::vector<double>;
+        TBranch *bthreshold = Sim->Branch("channelThreshold", &channelThreshold);
+
+        const int ntot = traces.size();
+        channelThreshold->resize(ntot, 0);
+        for (int ind=0; ind<ntot; ++ind) {
+            const int chid = traces[ind]->channel();
+            channelThreshold->at(chid) = summary[ind];
+        }
     
-    file->Close();
-    sim_wf->Delete();
-    delete raw_channelId;
-    delete file;
-    file = nullptr;
+        // debug
+        //for (int i=0; i<channelThreshold->size(); i++)
+        //{
+        //    cout<<" chid: "<< i << " threshold: "<< channelThreshold->at(i) << "\n";
+        //}
+
+    bthreshold->Fill();
+    }
+
+
+    // bad channels
+    // vector<int> badChannel
+    // vector<int> badBegin
+    // vector<int> badEnd
+    for (auto tag : cgetset(m_cfg["cmmtree"])) {
+            
+        Waveform::ChannelMaskMap input_cmm = frame->masks();
+        for (auto const& it: input_cmm) {
+            auto cmmkey = it.first;
+            
+            if ( tag.compare(cmmkey) != 0 ) continue;
+            
+            std::cerr << "CelltreeFrameSink: saving channel mask \"" << cmmkey << "\"\n";
+
+            std::vector<int> *Channel = new std::vector<int>;
+            std::vector<int> *Begin = new std::vector<int>;
+            std::vector<int> *End = new std::vector<int>;
+            const std::string Channelname = Form("%sChannel", tag.c_str()); 
+            const std::string Beginname = Form("%sBegin", tag.c_str()); 
+            const std::string Endname = Form("%sEnd", tag.c_str()); 
+            TBranch *bch = Sim->Branch(Channelname.c_str(), &Channel);
+            TBranch *bb = Sim->Branch(Beginname.c_str(), &Begin);
+            TBranch *be = Sim->Branch(Endname.c_str(), &End);
+
+            for (auto const &chmask : it.second){
+                Channel->push_back(chmask.first);
+                auto mask = chmask.second;
+                if(mask.size()!=1) {
+                    std::cerr << "CelltreeFrameSink: Warning: channel mask: " 
+                        << chmask.first << " has >1 dead period [begin, end] \n"; 
+                    continue;
+                }
+                for (size_t ind = 0; ind < mask.size(); ++ind){
+                    Begin->push_back(mask[ind].first);
+                    End->push_back(mask[ind].second);
+                }
+            }
+            
+            bch->Fill();
+            bb->Fill();
+            be->Fill();
+        }     
+    }
+
+
+    std::cerr << "CelltreeFrameSink: closing output file " << ofname << std::endl;
+    auto count = output_tf->Write();
+    std::cerr << "\twrote " << count << " bytes." << std::endl;
+    output_tf->Close();
+    delete output_tf;
+    output_tf = nullptr;
     return true;
 }
