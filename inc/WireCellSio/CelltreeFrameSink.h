@@ -33,6 +33,8 @@ namespace WireCell {
             Configuration m_cfg;
             IAnodePlane::pointer m_anode;
             int m_nsamples;
+
+	    int m_nrebin;
         };
 
     }

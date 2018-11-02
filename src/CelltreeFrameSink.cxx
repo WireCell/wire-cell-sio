@@ -23,6 +23,7 @@ using namespace std;
 using namespace WireCell;
 
 Sio::CelltreeFrameSink::CelltreeFrameSink()
+  : m_nrebin(1)
 {
 }
 
@@ -40,7 +41,8 @@ WireCell::Configuration Sio::CelltreeFrameSink::default_configuration() const
     cfg["frames"] = Json::arrayValue;
     cfg["cmmtree"] = Json::arrayValue;
     cfg["root_file_mode"] = "RECREATE";
-    cfg["nsamples"] = 0; 
+    cfg["nsamples"] = 0;
+    cfg["nrebin"] = 1;
 
     return cfg;
 }
@@ -67,6 +69,8 @@ void Sio::CelltreeFrameSink::configure(const WireCell::Configuration& cfg)
     }
 
     m_cfg = cfg;
+
+    m_nrebin = get<int>(cfg, "nrebin", m_nrebin);
 }
 
 
@@ -165,7 +169,10 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         //std::cout<<"channel number: "<<ch<<std::endl;
         raw_channelId->push_back(ch);
         // fill raw_wf
-        TH1F *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1F("", "",  nsamples, 0,  nsamples);
+
+	int temp_nbins = nsamples/m_nrebin;
+	
+        TH1F *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1F("", "",  temp_nbins, 0,  nsamples);
         //TH1I *htemp = new ( (*sim_wf)[sim_wf_ind] ) TH1I("", "",  nsamples, 0,  nsamples);
         auto const& wave = trace->charge();
         const int nbins = wave.size();
@@ -173,8 +180,9 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         const int tmin = trace->tbin();
         //std::cout<<"tmin: "<<tmin<<std::endl;
         for(Int_t i=0; i<nbins; i++){
-            if(tmin+i+1<=nsamples){ 
-            htemp->SetBinContent(tmin+i+1, wave[i]);
+            if(tmin+i+1<=nsamples){
+	      int ibin = (tmin+i)/m_nrebin;
+	      htemp->SetBinContent(ibin+1, wave[i]+htemp->GetBinContent(ibin+1));
             }
         } 
         sim_wf_ind ++;

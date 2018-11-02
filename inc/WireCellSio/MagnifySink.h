@@ -37,6 +37,8 @@ namespace WireCell {
             Configuration m_cfg;
             IAnodePlane::pointer m_anode;
 
+	    int m_nrebin;
+
 	    void do_shunt(TFile* output_tf);
 
         };

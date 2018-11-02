@@ -19,6 +19,7 @@ using namespace WireCell;
 
 
 Sio::MagnifySink::MagnifySink()
+    : m_nrebin(1)
 {
 }
 
@@ -49,6 +50,10 @@ void Sio::MagnifySink::configure(const WireCell::Configuration& cfg)
     m_anode = Factory::find_tn<IAnodePlane>(anode_tn);
 
     m_cfg = cfg;
+
+    m_nrebin = get<int>(cfg, "nrebin", m_nrebin);
+
+    // std::cout << "MagnifySink Rebin: " << m_nrebin << std::endl;
 }
 
 
@@ -85,6 +90,8 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
     // copied to output.
     cfg["runinfo"] = Json::nullValue;
 
+    cfg["nrebin"] = 1;
+    
     return cfg;
 }
 
@@ -334,9 +341,12 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
                       << " cbin:"<<cbin.nbins()<<"["<<cbin.min() << "," << cbin.max() << "]"
                       << " tbin:"<<tbin.nbins()<<"["<<tbin.min() << "," << tbin.max() << "]\n";
 
+	    // consider to add nrebin ...
+	    int nbins = tbin.nbins()/m_nrebin;
+	    
             TH2F* hist = new TH2F(name.c_str(), name.c_str(),
                                   cbin.nbins(), cbin.min(), cbin.max(),
-                                  tbin.nbins(), tbin.min(), tbin.max());
+                                  nbins, tbin.min(), tbin.max());
 
             hist->SetDirectory(output_tf);
             
@@ -354,8 +364,9 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
 		    // edit: it's due to saving errors.
 
 		    // std::cout << tbin1 << " " << tbin.min() << std::endl;
+		    int ibin = (tbin1-tbin.min()+itick)/m_nrebin;
 		    
-                    hist->SetBinContent(cbin.bin(ch)+1, tbin1-tbin.min()+itick+1, charges[itick]);
+                    hist->SetBinContent(cbin.bin(ch)+1, ibin+1, charges[itick]+hist->GetBinContent(cbin.bin(ch)+1, ibin+1));
                 }
             }
         }
