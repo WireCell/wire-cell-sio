@@ -8,6 +8,7 @@
 #include "TTree.h"
 
 #include "WireCellUtil/NamedFactory.h"
+#include "WireCellIface/FrameTools.h"
 
 #include <vector>
 #include <string>
@@ -75,6 +76,11 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
     // A list of trace tags defining which waveforms are saved to Magnify histograms.
     cfg["frames"] = Json::arrayValue;
 
+    // If no tags for traces, i.e. trace_has_tag=false in a frame,
+    // set desired tag to ""
+    // as FrameTool::tagged_traces(frame, "") calls untagged_traces(frame).
+    cfg["trace_has_tag"] = true;
+
     // A list of pairs mapping a cmm key name to a ttree name.
     cfg["cmmtree"] = Json::arrayValue;
 
@@ -106,6 +112,7 @@ string_set_t getset(const WireCell::Configuration& cfg)
 }
 
 // fixme: this little helper is also in FrameUtil
+/*
 ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
 {
     ITrace::vector ret;
@@ -122,7 +129,7 @@ ITrace::vector get_tagged_traces(IFrame::pointer frame, IFrame::tag_t tag)
     }
     return *all_traces;		// must make copy
 }
-
+*/
 
 std::vector<WireCell::Binning> collate_byplane(const ITrace::vector& traces, const IAnodePlane::pointer anode,
                                                ITrace::vector byplane[])
@@ -321,7 +328,16 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
 
     for (auto tag : getset(m_cfg["frames"])) {
 
-        ITrace::vector traces_byplane[3], traces = get_tagged_traces(frame, tag);
+        auto trace_tag = tag;
+        auto trace_has_tag  = m_cfg["trace_has_tag"].asBool();
+        if(!trace_has_tag){
+            trace_tag = "";
+            std::cerr << "MagnifySink: set desired trace tag to \"\" as cfg::trace_has_tag=false\n";
+        }
+
+        //ITrace::vector traces_byplane[3], traces = get_tagged_traces(frame, tag);
+        ITrace::vector traces_byplane[3], traces = FrameTools::tagged_traces(frame, trace_tag);
+	//if(traces.empty() && tag.find("orig",0)==0/*starts with orig*/) traces = FrameTools::untagged_traces(frame);
         if (traces.empty()) {
             std::cerr << "MagnifySink: no tagged traces for \"" << tag << "\"\n";
             // THROW(ValueError() << errmsg{"MagnifySink: no tagged traces"});
@@ -375,7 +391,8 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
 
     // Handle any trace summaries
     for (auto tag : getset(m_cfg["summaries"])) {
-        auto traces = get_tagged_traces(frame, tag);
+        //auto traces = get_tagged_traces(frame, tag);
+        auto traces = FrameTools::tagged_traces(frame, tag);
         if (traces.empty()) {
             std::cerr << "MagnifySink: warning: no traces tagged with \"" << tag << "\", skipping summary\n";
             continue;
