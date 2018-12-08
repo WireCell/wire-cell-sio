@@ -37,6 +37,11 @@ bool Sio::RootfileCreation_depos::operator()(const WireCell::IDepo::pointer& ind
 				       WireCell::IDepo::pointer& outdepo)
 {
   outdepo = indepo;
+  if (!indepo) {
+    // eos 
+    std::cerr << "RootfileCreation_depos: EOS\n";
+    return true;
+  }
   create_file();
   return true;
 }
@@ -75,6 +80,8 @@ void Sio::RootfileCreation_frames::create_file(){
   const std::string ofname = m_cfg["output_filename"].asString();
   const std::string mode = m_cfg["root_file_mode"].asString();
 
+  //  std::cout << "Xin: " << ofname << std::endl;
+  
   TFile* output_tf = TFile::Open(ofname.c_str(), mode.c_str()); 
   output_tf->Close("R");
   delete output_tf;
@@ -84,6 +91,11 @@ void Sio::RootfileCreation_frames::create_file(){
 
 bool Sio::RootfileCreation_frames::operator()(const WireCell::IFrame::pointer& in, WireCell::IFrame::pointer& out){
   out = in;
+  if (!in) {
+    // eos 
+    std::cerr << "RootfileCreation_frames: EOS\n";
+    return true;
+  }
   create_file();
   return true;
 }
