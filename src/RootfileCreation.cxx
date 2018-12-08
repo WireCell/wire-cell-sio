@@ -45,7 +45,7 @@ void Sio::RootfileCreation_depos::create_file(){
   const std::string ofname = m_cfg["output_filename"].asString();
   const std::string mode = m_cfg["root_file_mode"].asString();
   TFile* output_tf = TFile::Open(ofname.c_str(), mode.c_str());
-  output_tf->Close();
+  output_tf->Close("R");
   delete output_tf;
   output_tf = nullptr;
 }
@@ -74,8 +74,9 @@ WireCell::Configuration Sio::RootfileCreation_frames::default_configuration() co
 void Sio::RootfileCreation_frames::create_file(){
   const std::string ofname = m_cfg["output_filename"].asString();
   const std::string mode = m_cfg["root_file_mode"].asString();
-  TFile* output_tf = TFile::Open(ofname.c_str(), mode.c_str());
-  output_tf->Close();
+
+  TFile* output_tf = TFile::Open(ofname.c_str(), mode.c_str()); 
+  output_tf->Close("R");
   delete output_tf;
   output_tf = nullptr;
 }
@@ -86,3 +87,4 @@ bool Sio::RootfileCreation_frames::operator()(const WireCell::IFrame::pointer& i
   create_file();
   return true;
 }
+ 
