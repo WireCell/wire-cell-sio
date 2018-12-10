@@ -19,7 +19,7 @@ namespace WireCell {
       
     private:
       Configuration m_cfg;
-      
+      int m_calls;      
     };
   }
 }
