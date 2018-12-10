@@ -132,25 +132,44 @@ bool Sio::CelltreeSource::operator()(IFrame::pointer& out)
     auto frametag = m_cfg["frames"][0].asString();
     int channel_number = 0;
     
-	std::cerr<<"CelltreeSource: loading "<<frametag<<" "<<nchannels<<" channels \n";
+    std::cerr<<"CelltreeSource: loading "<<frametag<<" "<<nchannels<<" channels \n";
 
-    // fill waveform ... 
+    // fill waveform ...
+    TH1S *signal_s;
+    TH1F *signal_f;
+	
      for (int ind=0; ind < nchannels; ++ind) {
-	TH1F* signal = dynamic_cast<TH1F*>(esignal->At(ind));
-	if (!signal) continue;
-    channel_number = channelid->at(ind);
-
-	 ITrace::ChargeSequence charges;
-     int nticks = signal->GetNbinsX();
-     //std::cerr<<"CelltreeSource: tick "<<nticks<<"\n";
-     //nticks = 9600,  this could be an issue cause just 9594 have non-ZERO value around baseline
-     for (int itickbin = 0; itickbin != nticks; itickbin++){
-        if(signal->GetBinContent(itickbin+1)!=0) {
-            charges.push_back(signal->GetBinContent(itickbin+1));
-        }
+       signal_s = dynamic_cast<TH1S*>(esignal->At(ind));
+       signal_f = dynamic_cast<TH1F*>(esignal->At(ind));
+       
+       bool flag_float = 1;
+       if (signal_f==0 && signal_s!=0)
+	 flag_float = 0;
+       
+       if (!signal_f && !signal_s) continue;
+       channel_number = channelid->at(ind);
+       
+       ITrace::ChargeSequence charges;
+       int nticks;
+       if (flag_float==1)
+	 nticks = signal_f->GetNbinsX();
+       else
+	 nticks = signal_s->GetNbinsX();
+       //std::cerr<<"CelltreeSource: tick "<<nticks<<"\n";
+       //nticks = 9600,  this could be an issue cause just 9594 have non-ZERO value around baseline
+       for (int itickbin = 0; itickbin != nticks; itickbin++){
+	 if (flag_float==1){
+	   if(signal_f->GetBinContent(itickbin+1)!=0) {
+	     charges.push_back(signal_f->GetBinContent(itickbin+1));
+	   }
+	 }else{
+	   if(signal_s->GetBinContent(itickbin+1)!=0) {
+	     charges.push_back(signal_s->GetBinContent(itickbin+1));
+	   }
 	 }
-
-	 const size_t index = all_traces.size();
+       }
+       
+       const size_t index = all_traces.size();
 	 tagged_traces[frametag].push_back(index);
 	 
 	 all_traces.push_back(std::make_shared<SimpleTrace>(channel_number, 0, charges));
