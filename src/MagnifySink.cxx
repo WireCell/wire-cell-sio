@@ -98,6 +98,18 @@ WireCell::Configuration Sio::MagnifySink::default_configuration() const
 
     cfg["nrebin"] = 1;
     
+    // List tagged traces from which to save the "trace summary"
+    // vector into a 1D histogram which will be named after the tag.
+    // See "summary_operator".
+    cfg["summaries"] = Json::arrayValue;
+
+    // An object mapping tags to operators for aggregating trace
+    // summary values on the same channel.  Operator may be "sum" to
+    // add up all values on the same channel or "set" to assign values
+    // to the channel bin (last one wins).  If a tag is not found, the
+    // default operator is "sum".
+    cfg["summary_operator"] = Json::objectValue;
+
     return cfg;
 }
 
@@ -403,6 +415,8 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
             continue;
         }
             
+        std::string oper = get<std::string>(m_cfg["summary_operator"], tag, "sum");
+
         std::cerr << "MagnifySink: saving summaries tagged with \"" << tag << "\" into per-plane hists\n";
 
         // warning: this is going to get ugly.  we jump through these
@@ -427,9 +441,15 @@ bool Sio::MagnifySink::operator()(const IFrame::pointer& frame, IFrame::pointer&
             TH1F* hist = new TH1F(hname.c_str(), hname.c_str(),
                                   chf-ch0+1, ch0, chf);
             for (size_t ind=0; ind<chans.size(); ++ind) {
-                const int ch = chans[ind];
+                const int x = chans[ind]+0.5;
                 const double val = vals[ind];
-                hist->Fill(ch+0.5, val);
+                if (oper == "set") {
+                    int bin = hist->FindBin(x);
+                    hist->SetBinContent(bin, val);
+                }
+                else {
+                    hist->Fill(x, val);
+                }
             }
             hist->SetDirectory(output_tf);
         }
