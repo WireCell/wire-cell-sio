@@ -44,6 +44,19 @@ WireCell::Configuration Sio::CelltreeFrameSink::default_configuration() const
     cfg["nsamples"] = 0;
     cfg["nrebin"] = 1;
 
+    // List tagged traces from which to save the "trace summary"
+    // vector into a 1D vector which will be named after the tag.
+    // See "summary_operator".
+    cfg["summaries"] = Json::arrayValue;
+
+    // An object mapping tags to operators for aggregating trace
+    // summary values on the same channel.  Operator may be "sum" to
+    // add up all values on the same channel or "set" to assign values
+    // to the channel bin (last one wins).  If a tag is not found, the
+    // default operator is "sum".
+    cfg["summary_operator"] = Json::objectValue;
+
+
     return cfg;
 }
 
@@ -207,7 +220,11 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
             std::cerr << "CelltreeFrameSink: warning: empty summary tagged with \"" << tag << "\", skipping summary\n";
             continue;
         }
-            
+
+        // default: "sum"
+        // to save thresholds: "set"
+        std::string oper = get<std::string>(m_cfg["summary_operator"], tag, "sum");
+
         std::cerr << "CelltreeFrameSink: summary tag: \"" << tag << "\" with " << traces.size() << " traces\n";
         
         // vector<double> channelThreshold index <--> channelId
@@ -218,7 +235,13 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         channelThreshold->resize(ntot, 0);
         for (int ind=0; ind<ntot; ++ind) {
             const int chid = traces[ind]->channel();
-            channelThreshold->at(chid) = summary[ind];
+            const double val = summary[ind];
+            if (oper == "set") {
+                channelThreshold->at(chid) = val;
+            }
+            else {
+                channelThreshold->at(chid) += val;
+            }
         }
     
         // debug
