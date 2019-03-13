@@ -160,7 +160,8 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         std::vector<int> *raw_channelId = new std::vector<int>;
         std::string channelIdname;
         if ( !tag.compare("gauss")) channelIdname = "calibGaussian_channelId"; 
-        if ( !tag.compare("wiener")) channelIdname = "calibWiener_channelId"; 
+        if ( !tag.compare("wiener")) channelIdname = "calibWiener_channelId";
+        if ( !tag.compare("orig")) channelIdname = "raw_channelId";
         //const std::string channelIdname = Form("%s_channelId", tag.c_str());
         TBranch *bchannelId = Sim->Branch(channelIdname.c_str(), &raw_channelId);
         
@@ -169,6 +170,7 @@ bool Sio::CelltreeFrameSink::operator()(const IFrame::pointer& frame, IFrame::po
         std::string wfname;
         if ( !tag.compare("gauss")) wfname = "calibGaussian_wf"; 
         if ( !tag.compare("wiener")) wfname = "calibWiener_wf"; 
+        if ( !tag.compare("orig")) wfname = "raw_wf";
         //const std::string wfname = Form("%s_wf", tag.c_str());
         TBranch *bwf = Sim->Branch(wfname.c_str(), &sim_wf, 256000, 0);
 
