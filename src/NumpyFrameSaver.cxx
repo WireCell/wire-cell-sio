@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <iostream>
 #include <tuple>
+#include <sstream>
 
 WIRECELL_FACTORY(NumpyFrameSaver, WireCell::Sio::NumpyFrameSaver,
                  WireCell::IFrameFilter, WireCell::IConfigurable)
@@ -17,6 +17,7 @@ using namespace WireCell;
 
 Sio::NumpyFrameSaver::NumpyFrameSaver()
     : m_save_count(0)
+    , l(Log::logger("io"))
 {
 }
 
@@ -71,7 +72,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
                                  IFrame::pointer& outframe)
 {
     if (!inframe) {
-        std::cerr << "NumpyFrameSaver sees EOS on frame stream\n";
+        l->debug("EOS on frame stream");
         outframe = nullptr;
         return true;
     }
@@ -97,28 +98,29 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
     }
 
 
-    std::cerr << "NumpyFrameSaver see frame #" << inframe->ident()
-              << " with " << inframe->traces()->size() << " traces with frame tags:";
+    std::stringstream ss;
+    ss << "see frame #" << inframe->ident()
+       << " with " << inframe->traces()->size() << " traces with frame tags:";
     for (auto t : inframe->frame_tags()) {
-        std::cerr << " \"" << t << "\"";
+        ss << " \"" << t << "\"";
     }
-    std::cerr << " and trace tags:";
+    ss << " and trace tags:";
     for (auto t : inframe->trace_tags()) {
-        std::cerr << " \"" << t << "\"";
+        ss << " \"" << t << "\"";
     }
-    std::cerr << " looking for tags:";
+    ss << " looking for tags:";
     for (auto jt: m_cfg["frame_tags"]) {
-        std::cerr << " \"" << jt.asString() << "\"";
+        ss << " \"" << jt.asString() << "\"";
     }
-    std::cerr << std::endl;
+    l->debug(ss.str());
 
 
     for (auto jtag : m_cfg["frame_tags"]) {
         const std::string tag = jtag.asString();
         auto traces = FrameTools::tagged_traces(inframe, tag);
-        std::cerr << "NumpyFrameSaver: save " << traces.size() << " tagged as \"" << tag << "\"\n";
+        l->debug("save {} tagged as {}", traces.size(), tag);
         if (traces.empty()) {
-            std::cerr << "NumpyFrameSaver: no traces for tag: \"" << tag << "\"\n";
+            l->warn("no traces for tag: \"{}\"", tag);
             continue;
         }
         auto channels = FrameTools::channels(traces);
@@ -130,7 +132,8 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
         // fixme: may want to give user some config over tbin range to save.
         const size_t ncols = tbinmm.second-tbinmm.first;
         const size_t nrows = std::distance(chbeg, chend);
-        std::cerr << "NumpyFrameSaver: ncols=" << ncols << " nrows=" <<nrows <<"\n";
+        l->debug("saving ncols={} nrows={}", ncols, nrows);
+
         Array::array_xxf arr = Array::array_xxf::Zero(nrows, ncols) + baseline;
         FrameTools::fill(arr, traces, channels.begin(), chend, tbinmm.first);
         arr = arr * scale + offset;
@@ -145,10 +148,8 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
             else {
                 cnpy::npz_save(fname, aname, arr.data(), {ncols, nrows}, mode);
             }
-            std::cerr << "Saved " << aname << " with " << nrows << " channels "
-                      << ncols << " ticks @t=" << inframe->time() / units::ms << "ms, "
-                      << "qtot=" << arr.sum() << "\n";
-
+            l->debug("saved {} with {} channels {} ticks @t={} ms qtot={}",
+                     aname, nrows, ncols, inframe->time() / units::ms, arr.sum());
         }
 
         {                   // the channel array

@@ -5,6 +5,7 @@
 
 #include "WireCellIface/IFrameFilter.h"
 #include "WireCellIface/IConfigurable.h"
+#include "WireCellUtil/Logging.h"
 
 namespace WireCell {
     namespace Sio {
@@ -27,6 +28,7 @@ namespace WireCell {
 
             Configuration m_cfg;
             int m_save_count;   // count frames saved
+            Log::logptr_t l;
         };
     }
 }
