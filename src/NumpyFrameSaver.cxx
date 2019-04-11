@@ -72,7 +72,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
                                  IFrame::pointer& outframe)
 {
     if (!inframe) {
-        l->debug("EOS on frame stream");
+        l->debug("NumpyFrameSaver: EOS");
         outframe = nullptr;
         return true;
     }
@@ -99,7 +99,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
 
 
     std::stringstream ss;
-    ss << "see frame #" << inframe->ident()
+    ss << "NumpyFrameSaver: see frame #" << inframe->ident()
        << " with " << inframe->traces()->size() << " traces with frame tags:";
     for (auto t : inframe->frame_tags()) {
         ss << " \"" << t << "\"";
@@ -118,9 +118,9 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
     for (auto jtag : m_cfg["frame_tags"]) {
         const std::string tag = jtag.asString();
         auto traces = FrameTools::tagged_traces(inframe, tag);
-        l->debug("save {} tagged as {}", traces.size(), tag);
+        l->debug("NumpyFrameSaver: save {} tagged as {}", traces.size(), tag);
         if (traces.empty()) {
-            l->warn("no traces for tag: \"{}\"", tag);
+            l->warn("NumpyFrameSaver: no traces for tag: \"{}\"", tag);
             continue;
         }
         auto channels = FrameTools::channels(traces);
@@ -132,7 +132,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
         // fixme: may want to give user some config over tbin range to save.
         const size_t ncols = tbinmm.second-tbinmm.first;
         const size_t nrows = std::distance(chbeg, chend);
-        l->debug("saving ncols={} nrows={}", ncols, nrows);
+        l->debug("NumpyFrameSaver: saving ncols={} nrows={}", ncols, nrows);
 
         Array::array_xxf arr = Array::array_xxf::Zero(nrows, ncols) + baseline;
         FrameTools::fill(arr, traces, channels.begin(), chend, tbinmm.first);
@@ -148,7 +148,7 @@ bool Sio::NumpyFrameSaver::operator()(const IFrame::pointer& inframe,
             else {
                 cnpy::npz_save(fname, aname, arr.data(), {ncols, nrows}, mode);
             }
-            l->debug("saved {} with {} channels {} ticks @t={} ms qtot={}",
+            l->debug("NumpyFrameSaver: saved {} with {} channels {} ticks @t={} ms qtot={}",
                      aname, nrows, ncols, inframe->time() / units::ms, arr.sum());
         }
 
