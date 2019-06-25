@@ -11,8 +11,10 @@ if [ -z "$datadir" ] ; then
     datadir="$tmpdir/data"
     
 fi
-wire-cell -L debug -l stdout -V datadir="$datadir" -c $testdir/test_beedeposource.jsonnet || exit 1
+depofiles=$(for n in  data/?/?-truthDepo.json; do echo -n '"'$n'"',; done)
+
+
+wire-cell -L debug -l stdout -C "depofiles=["$depofiles"]" -c $testdir/test_beedeposource.jsonnet || exit 1
 if [ -n "$tmpdir" ] ; then
     rm -rf $tmpdir
 fi
-

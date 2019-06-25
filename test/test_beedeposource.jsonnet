@@ -1,12 +1,15 @@
 local wc = import "wirecell.jsonnet";
 local g = import "pgraph.jsonnet";
 
-local datadir = std.extVar("datadir");
+// in shell, do something crazy like:
+// depofiles=$(for n in  data/?/?-truthDepo.json; do echo -n '"'$n'"',; done)
+// wire-cell -C "depofiles=["$depofiles"]" ....
+local depofiles = std.extVar("depofiles");
 
 local depos = g.pnode({
     type: 'BeeDepoSource',
     data: {
-        filelist: ["%s/%d/%d-truthDepo.json"%[datadir, n, n] for n in std.range(0,9)],
+        filelist: depofiles
     },
 }, nin=0, nout=1);
 
